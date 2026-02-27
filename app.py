@@ -3,51 +3,77 @@ import pdfplumber
 import pandas as pd
 import re
 
-st.title("📄 Extractor de Dividendos ING a Excel")
+st.title("📄 Extractor de Dividendos ING (Españoles y Americanos)")
 st.write("Sube tus recibos de dividendos en PDF y obtén tu tabla al instante.")
 
 archivos_pdf = st.file_uploader("Sube tus PDFs de ING aquí", type=["pdf"], accept_multiple_files=True)
+
+def buscar_dato(patrones, texto, por_defecto="0,00"):
+    """Prueba varios patrones de búsqueda hasta encontrar el dato correcto."""
+    for patron in patrones:
+        # re.MULTILINE permite buscar línea por línea correctamente
+        match = re.search(patron, texto, re.IGNORECASE | re.MULTILINE)
+        if match:
+            # Devuelve el primer grupo encontrado
+            for grupo in match.groups():
+                if grupo is not None:
+                    return grupo.strip()
+    return por_defecto
 
 if archivos_pdf:
     datos_extraidos = []
     
     for archivo in archivos_pdf:
         with pdfplumber.open(archivo) as pdf:
-            texto = pdf.pages[0].extract_text()
+            # MAGIA: layout=True fuerza a mantener la estructura visual con espacios
+            texto = pdf.pages[0].extract_text(layout=True) 
+            
+            # Si layout=True falla, usamos el texto normal como plan B
+            if not texto:
+                texto = pdf.pages[0].extract_text()
             
             if texto:
-                # 1. Fecha Valor (Busca el formato DD/MM/YYYY después de "Fecha valor")
-                match_fecha = re.search(r"Fecha valor.*?(\d{2}/\d{2}/\d{4})", texto, re.IGNORECASE | re.DOTALL)
-                # Si no encuentra "Fecha valor", busca la primera fecha que aparezca en el documento
-                if not match_fecha:
-                    match_fecha = re.search(r"(\d{2}/\d{2}/\d{4})", texto)
-                fecha = match_fecha.group(1) if match_fecha else "No encontrada"
-
-                # 2. Empresa
-                match_empresa = re.search(r"Valor:\s*([^\n]+)", texto, re.IGNORECASE)
-                empresa = match_empresa.group(1).strip() if match_empresa else "No encontrada"
+                # 1. Fecha Valor
+                fecha = buscar_dato([r"Fecha valor.*?(\d{2}/\d{2}/\d{4})", r"(\d{2}/\d{2}/\d{4})"], texto, "No encontrada")
                 
-                # 3. Número de títulos
-                match_titulos = re.search(r"(\d+)\s*N[úu]mero de t[íi]tulos", texto, re.IGNORECASE)
-                titulos = match_titulos.group(1) if match_titulos else "0"
+                # 2. Empresa (Realty Income, Vidrala, etc.)
+                empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "No encontrada")
+                # Limpiamos si se cuela algo extra al lado
+                empresa = empresa.split("   ")[0].strip()
+
+                # 3. Número de Títulos
+                titulos = buscar_dato([
+                    r"N[úu]mero de t[íi]tulos\s*:\s*(\d+)",          # Formato nuevo/americano
+                    r"(\d+)\s+N[úu]mero de t[íi]tulos",             # Formato antiguo
+                    r"N[úu]mero de t[íi]tulos.*?(\d+)"              # Por si hay espacios de por medio
+                ], texto, "0")
                 
                 # 4. Importe Bruto
-                match_bruto = re.search(r"Importe total bruto:\s*([\d,]+)\s*€", texto, re.IGNORECASE)
-                bruto = match_bruto.group(1) if match_bruto else "0,00"
+                bruto = buscar_dato([
+                    r"Importe total bruto\s*:\s*([\d,]+)", 
+                    r"([\d,]+)\s*€\s*Importe total bruto"
+                ], texto)
                 
-                # 5. Retención en Origen
-                match_ret_origen = re.search(r"Retenci[óo]n en origen\s*([\d,]+)\s*€", texto, re.IGNORECASE)
-                ret_origen = match_ret_origen.group(1) if match_ret_origen else "0,00"
+                # 5. Retención en Origen (USA u otros)
+                ret_origen = buscar_dato([
+                    r"Retenci[óo]n en origen\s*:\s*([\d,]+)", 
+                    r"Retenci[óo]n en origen\s*([\d,]+)",
+                    r"([\d,]+)\s*€\s*Retenci[óo]n en origen"
+                ], texto)
                 
-                # 6. Retención (Destino)
-                match_retencion = re.search(r"([\d,]+)\s*€\s*:\s*Retenci[óo]n", texto, re.IGNORECASE)
-                retencion = match_retencion.group(1) if match_retencion else "0,00"
+                # 6. Retención en Destino (España)
+                ret_destino = buscar_dato([
+                    r"Retenci[óo]n en destino\s*:\s*([\d,]+)", 
+                    r"Retenci[óo]n\s*:\s*([\d,]+)",
+                    r"([\d,]+)\s*€\s*:\s*Retenci[óo]n"
+                ], texto)
                 
                 # 7. Importe Neto
-                match_neto = re.search(r"([\d,]+)\s*€\s*Importe total neto", texto, re.IGNORECASE)
-                neto = match_neto.group(1) if match_neto else "0,00"
+                neto = buscar_dato([
+                    r"Importe total neto\s*:\s*([\d,]+)", 
+                    r"([\d,]+)\s*€\s*Importe total neto"
+                ], texto)
                 
-                # Guardamos la fila con todos los datos
                 datos_extraidos.append({
                     "Documento": archivo.name,
                     "Fecha Valor": fecha,
@@ -55,22 +81,20 @@ if archivos_pdf:
                     "Títulos": titulos,
                     "Bruto (€)": bruto,
                     "Ret. Origen (€)": ret_origen,
-                    "Ret. Destino (€)": retencion,
+                    "Ret. Destino (€)": ret_destino,
                     "Neto (€)": neto
                 })
 
-    # Mostrar resultados
     if datos_extraidos:
         st.success(f"¡Se procesaron {len(datos_extraidos)} archivo(s) con éxito!")
         
         df = pd.DataFrame(datos_extraidos)
         st.dataframe(df)
         
-        # Botón de descarga para Excel (.csv)
         csv = df.to_csv(index=False, sep=";").encode('utf-8-sig')
         st.download_button(
             label="⬇️ Descargar tabla para Excel (.csv)",
             data=csv,
-            file_name='dividendos_ING_completos.csv',
+            file_name='dividendos_completos.csv',
             mime='text/csv',
         )
