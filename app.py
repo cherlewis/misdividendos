@@ -28,17 +28,11 @@ def calcular_porcentaje(parte_str, total_str):
         
         ratio = p / t
         
-        # Reconocimiento inteligente de los tramos fiscales
-        if 0.26 <= ratio <= 0.27:
-            return "26,375%"  # Alemania
-        elif 0.245 <= ratio <= 0.255:
-            return "25%"      # Francia
-        elif 0.14 <= ratio <= 0.16:
-            return "15%"      # USA (Con formulario W-8BEN)
-        elif 0.185 <= ratio <= 0.195:
-            return "19%"      # España (Destino)
+        if 0.26 <= ratio <= 0.27: return "26,375%"  # Alemania
+        elif 0.245 <= ratio <= 0.255: return "25%"      # Francia
+        elif 0.14 <= ratio <= 0.16: return "15%"      # USA
+        elif 0.185 <= ratio <= 0.195: return "19%"      # España
             
-        # Si es un porcentaje distinto a estos, lo calcula matemáticamente con 2 decimales
         return f"{round(ratio * 100, 2):g}%".replace('.', ',')
     except:
         return "0%"
@@ -77,7 +71,7 @@ if archivos_pdf:
                 ret_destino = buscar_dato([r"Retenci[óo]n en destino\s*:\s*([\d,]+)", r"Retenci[óo]n\s*:\s*([\d,]+)", r"([\d,]+)\s*€\s*:\s*Retenci[óo]n"], texto)
                 neto = buscar_dato([r"Importe total neto\s*:\s*([\d,]+)", r"([\d,]+)\s*€\s*Importe total neto"], texto)
 
-                # 5. Porcentajes de Retención (Ahora exactos por país)
+                # 5. Porcentajes de Retención
                 pct_origen = calcular_porcentaje(ret_origen, bruto)
                 pct_destino = calcular_porcentaje(ret_destino, bruto)
 
@@ -85,17 +79,15 @@ if archivos_pdf:
                 cuenta_abono = buscar_dato([r"(1465\s*0100\s*93\s*\d{10})", r"(1465\s*010093\s*\d{10})"], texto, "N/A")
                 cuenta_valores = buscar_dato([r"(91\s*\d{10})", r"(1465\s*0100\s*91\s*\d{10})"], texto, "0")
 
-                # ==========================================
-                # ORDENACIÓN DE COLUMNAS EXACTA
-                # ==========================================
+                # Guardamos los datos
                 datos_extraidos.append({
                     "Fecha Abono": fecha_abono,
                     "Concepto": concepto,
                     "Importe Neto (€)": neto,
                     "Retención en origen (€)": ret_origen,
-                    "% Retención en origen": pct_origen,
+                    "% retención en origen": pct_origen,
                     "Retención en destino (€)": ret_destino,
-                    "% Retención en destino": pct_destino,
+                    "% retención en destino": pct_destino,
                     "Importe Bruto (€)": bruto,
                     "Empresa": empresa,
                     "Cuenta de Valores": cuenta_valores,
@@ -108,12 +100,24 @@ if archivos_pdf:
         st.success(f"¡Se procesaron {len(datos_extraidos)} archivo(s) con éxito!")
         
         df = pd.DataFrame(datos_extraidos)
+        
+        # ==========================================
+        # ORDENAR POR FECHA (MÁS ANTIGUA A MÁS NUEVA)
+        # ==========================================
+        # Convertimos la columna a un formato de fecha real de forma temporal
+        df['Fecha_Temporal'] = pd.to_datetime(df['Fecha Abono'], format='%d/%m/%Y', errors='coerce')
+        # Ordenamos usando esa fecha temporal (ascending=True significa de antigua a nueva)
+        df = df.sort_values(by='Fecha_Temporal', ascending=True)
+        # Borramos la columna temporal para que tu Excel quede limpio
+        df = df.drop(columns=['Fecha_Temporal'])
+        
         st.dataframe(df)
         
         csv = df.to_csv(index=False, sep=";").encode('utf-8-sig')
         st.download_button(
             label="⬇️ Descargar tabla para Excel (.csv)",
             data=csv,
-            file_name='dividendos_ING_completos.csv',
+            file_name='dividendos_ING_ordenados.csv',
             mime='text/csv',
         )
+
