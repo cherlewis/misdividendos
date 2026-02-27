@@ -3,7 +3,7 @@ import pdfplumber
 import pandas as pd
 import re
 
-st.title("📄 Extractor de Dividendos ING (Españoles y Americanos)")
+st.title("📄 Extractor de Dividendos ING")
 st.write("Sube tus recibos de dividendos en PDF y obtén tu tabla al instante.")
 
 archivos_pdf = st.file_uploader("Sube tus PDFs de ING aquí", type=["pdf"], accept_multiple_files=True)
@@ -23,26 +23,32 @@ if archivos_pdf:
     
     for archivo in archivos_pdf:
         with pdfplumber.open(archivo) as pdf:
-            # Extraemos intentando mantener el formato visual (para los americanos)
             texto = pdf.pages[0].extract_text(layout=True) 
             
-            # Plan B si falla el modo visual
             if not texto:
                 texto = pdf.pages[0].extract_text()
             
             if texto:
-                # 1. Fecha Valor
-                fecha = buscar_dato([r"Fecha valor.*?(\d{2}/\d{2}/\d{4})", r"(\d{2}/\d{2}/\d{4})"], texto, "No encontrada")
-                
+                # --- NUEVA LÓGICA DE FECHA VALOR ---
+                # 1. Buscamos todas las fechas con formato DD/MM/YYYY en el documento
+                fechas_encontradas = re.findall(r"\d{2}/\d{2}/\d{4}", texto)
+                if fechas_encontradas:
+                    # Las ordenamos temporalmente como YYYYMMDD para que Python sepa cuál es más antigua
+                    fechas_ordenadas = sorted(fechas_encontradas, key=lambda f: f[6:] + f[3:5] + f[0:2])
+                    # La Fecha Valor siempre es la más antigua de las que aparecen
+                    fecha = fechas_ordenadas[0]
+                else:
+                    fecha = "No encontrada"
+
                 # 2. Empresa 
                 empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "No encontrada")
                 empresa = empresa.split("   ")[0].strip()
 
-                # 3. Importe por título (NUEVO)
+                # 3. Importe por título
                 importe_titulo = buscar_dato([
-                    r"Importe por t[íi]tulo\s*:\s*([\d,]+)",       # Formato "Importe por título: 1,23"
-                    r"Importe por t[íi]tulo\s*([\d,]+)",            # Formato sin dos puntos
-                    r"([\d,]+)\s*€\s*Importe por t[íi]tulo"         # Formato con el número antes
+                    r"Importe por t[íi]tulo\s*:\s*([\d,]+)",       
+                    r"Importe por t[íi]tulo\s*([\d,]+)",            
+                    r"([\d,]+)\s*€\s*Importe por t[íi]tulo"         
                 ], texto)
 
                 # 4. Número de Títulos
@@ -78,7 +84,7 @@ if archivos_pdf:
                     r"([\d,]+)\s*€\s*Importe total neto"
                 ], texto)
                 
-                # Guardamos la fila final con todos los datos
+                # Guardamos la fila final
                 datos_extraidos.append({
                     "Documento": archivo.name,
                     "Fecha Valor": fecha,
