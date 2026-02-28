@@ -6,11 +6,10 @@ import io
 import zipfile
 from datetime import datetime
 
-# Configuramos la página para que sea más ancha y tenga título en la pestaña del navegador
-st.set_page_config(page_title="Centro de Dividendos", layout="wide")
+st.set_page_config(page_title="Centro Financiero ING", layout="wide")
 
 # ==========================================
-# 🧠 FUNCIONES COMPARTIDAS (El "Cerebro")
+# 🧠 FUNCIONES COMPARTIDAS
 # ==========================================
 def buscar_dato(patrones, texto, por_defecto="0,00"):
     for patron in patrones:
@@ -36,29 +35,31 @@ def calcular_porcentaje(parte_str, total_str):
         return "0%"
 
 # ==========================================
-# 🧭 MENÚ LATERAL (La Navegación)
+# 🧭 MENÚ LATERAL
 # ==========================================
 st.sidebar.title("🛠️ Menú Principal")
 st.sidebar.write("Elige la herramienta que quieres usar:")
 
 opcion = st.sidebar.radio(
-    "", # Dejamos el título del radio vacío para que quede más limpio
-    ["📊 Extractor a Excel", "🗂️ Renombrador de PDFs"]
+    "", 
+    [
+        "📊 Dividendos a Excel", 
+        "🛒 Compras/Ventas a Excel", 
+        "🗂️ Renombrador de PDFs"
+    ]
 )
 
-# Línea separadora en el menú
 st.sidebar.markdown("---")
-st.sidebar.info("💡 Puedes subir varios PDFs a la vez en ambas herramientas.")
-
+st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
 
 # ==========================================
-# 🚀 APLICACIÓN 1: EXTRACTOR A EXCEL
+# 🚀 APLICACIÓN 1: DIVIDENDOS
 # ==========================================
-if opcion == "📊 Extractor a Excel":
-    st.title("📊 Extractor Profesional de Dividendos ING")
-    st.write("Sube tus recibos de dividendos en PDF y obtén tu tabla lista para importar.")
+if opcion == "📊 Dividendos a Excel":
+    st.title("📊 Extractor de Dividendos")
+    st.write("Sube tus recibos de dividendos en PDF de ING y obtén tu tabla.")
 
-    archivos_pdf = st.file_uploader("Sube tus PDFs de ING aquí", type=["pdf"], accept_multiple_files=True, key="ext")
+    archivos_pdf = st.file_uploader("Sube tus PDFs aquí", type=["pdf"], accept_multiple_files=True, key="div")
 
     if archivos_pdf:
         datos_extraidos = []
@@ -68,28 +69,23 @@ if opcion == "📊 Extractor a Excel":
                 if not texto: texto = pdf.pages[0].extract_text()
                 
                 if texto:
-                    fechas_encontradas = re.findall(r"\d{2}/\d{2}/\d{4}", texto)
-                    if fechas_encontradas:
-                        fechas_ordenadas = sorted(fechas_encontradas, key=lambda f: f[6:] + f[3:5] + f[0:2])
-                        fecha_abono = fechas_ordenadas[0]
-                    else: fecha_abono = "No encontrada"
+                    fechas = re.findall(r"\d{2}/\d{2}/\d{4}", texto)
+                    fecha_abono = sorted(fechas, key=lambda f: f[6:] + f[3:5] + f[0:2])[0] if fechas else "No encontrada"
 
-                    empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Desconocida")
-                    empresa = empresa.split("   ")[0].strip()
+                    empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Desconocida").split("   ")[0].strip()
                     concepto = f"DIVIDENDO ({empresa})"
 
-                    importe_titulo = buscar_dato([r"Importe por t[íi]tulo\s*:\s*([\d,]+)", r"Importe por t[íi]tulo\s*([\d,]+)", r"([\d,]+)\s*€\s*Importe por t[íi]tulo"], texto)
-                    titulos = buscar_dato([r"N[úu]mero de t[íi]tulos\s*:\s*(\d+)", r"(\d+)\s+N[úu]mero de t[íi]tulos", r"N[úu]mero de t[íi]tulos.*?(\d+)"], texto, "0")
-                    bruto = buscar_dato([r"Importe total bruto\s*:\s*([\d,]+)", r"([\d,]+)\s*€\s*Importe total bruto"], texto)
-                    ret_origen = buscar_dato([r"Retenci[óo]n en origen\s*:\s*([\d,]+)", r"Retenci[óo]n en origen\s*([\d,]+)", r"([\d,]+)\s*€\s*Retenci[óo]n en origen"], texto)
-                    ret_destino = buscar_dato([r"Retenci[óo]n en destino\s*:\s*([\d,]+)", r"Retenci[óo]n\s*:\s*([\d,]+)", r"([\d,]+)\s*€\s*:\s*Retenci[óo]n"], texto)
-                    neto = buscar_dato([r"Importe total neto\s*:\s*([\d,]+)", r"([\d,]+)\s*€\s*Importe total neto"], texto)
+                    importe_titulo = buscar_dato([r"Importe por t[íi]tulo\s*:\s*([\d,]+)", r"([\d,]+)\s*€\s*Importe por t[íi]tulo"], texto)
+                    titulos = buscar_dato([r"N[úu]mero de t[íi]tulos\s*:\s*(\d+)", r"N[úu]mero de t[íi]tulos.*?(\d+)"], texto, "0")
+                    bruto = buscar_dato([r"Importe total bruto\s*:\s*([\d,]+)"], texto)
+                    ret_origen = buscar_dato([r"Retenci[óo]n en origen\s*:\s*([\d,]+)", r"Retenci[óo]n en origen\s*([\d,]+)"], texto)
+                    ret_destino = buscar_dato([r"Retenci[óo]n en destino\s*:\s*([\d,]+)", r"Retenci[óo]n\s*:\s*([\d,]+)"], texto)
+                    neto = buscar_dato([r"Importe total neto\s*:\s*([\d,]+)"], texto)
 
                     pct_origen = calcular_porcentaje(ret_origen, bruto)
                     pct_destino = calcular_porcentaje(ret_destino, bruto)
-
-                    cuenta_abono = buscar_dato([r"(1465\s*0100\s*93\s*\d{10})", r"(1465\s*010093\s*\d{10})"], texto, "N/A")
-                    cuenta_valores = buscar_dato([r"(91\s*\d{10})", r"(1465\s*0100\s*91\s*\d{10})"], texto, "0")
+                    cuenta_abono = buscar_dato([r"(1465\s*0100\s*93\s*\d{10})"], texto, "N/A")
+                    cuenta_valores = buscar_dato([r"(91\s*\d{10})"], texto, "0")
 
                     datos_extraidos.append({
                         "Fecha Abono": fecha_abono, "Concepto": concepto, "Importe Neto (€)": neto,
@@ -104,15 +100,93 @@ if opcion == "📊 Extractor a Excel":
             df = pd.DataFrame(datos_extraidos)
             df['Fecha_Temporal'] = pd.to_datetime(df['Fecha Abono'], format='%d/%m/%Y', errors='coerce')
             df = df.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
-            
             st.dataframe(df)
-            
             csv = df.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar tabla para Excel (.csv)", data=csv, file_name='dividendos_ING_ordenados.csv', mime='text/csv')
-
+            st.download_button(label="⬇️ Descargar Excel", data=csv, file_name='dividendos.csv', mime='text/csv')
 
 # ==========================================
-# 🚀 APLICACIÓN 2: RENOMBRADOR DE PDFs
+# 🚀 APLICACIÓN 2: COMPRAS Y VENTAS (NUEVO)
+# ==========================================
+elif opcion == "🛒 Compras/Ventas a Excel":
+    st.title("🛒 Extractor de Compras y Ventas")
+    st.write("Sube tus justificantes de operaciones de bolsa (ING) para obtener el desglose de comisiones.")
+
+    archivos_pdf_op = st.file_uploader("Sube tus PDFs de Operaciones aquí", type=["pdf"], accept_multiple_files=True, key="ops")
+
+    if archivos_pdf_op:
+        datos_operaciones = []
+        for archivo in archivos_pdf_op:
+            with pdfplumber.open(archivo) as pdf:
+                texto = pdf.pages[0].extract_text(layout=True)
+                if not texto: texto = pdf.pages[0].extract_text()
+                
+                if texto:
+                    # 1. Escáner de la fila principal (Títulos, Empresa, ISIN, Mercado, Importes...)
+                    patron_main = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})"
+                    match_main = re.search(patron_main, texto)
+                    
+                    # 2. Escáner de la fila secundaria (Fechas de ejecución y Tipo de cambio)
+                    patron_fecha = r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})\s+(\d+)\s+([A-Za-z]+)\s+([\d,]+\s+[A-Z]{3})(?:\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}))?(?:\s+([\d,]+\s+[A-Z]{3}))?\s+([\d,]+\s+[A-Z]{3})"
+                    match_fecha = re.search(patron_fecha, texto)
+
+                    # Si el escáner encuentra los datos, los extraemos y limpiamos
+                    if match_main:
+                        titulos = match_main.group(1).strip()
+                        empresa = match_main.group(2).strip()
+                        isin = match_main.group(3).strip()
+                        mercado = match_main.group(4).strip()
+                        tipo_op = match_main.group(5).strip()
+                        precio = match_main.group(6).strip()
+                        importe_op = match_main.group(7).strip()
+                        comision_ing = match_main.group(8).strip()
+                        gastos_bolsa = match_main.group(9).strip()
+                        impuestos = match_main.group(10).strip()
+                        comision_cambio = match_main.group(11).strip()
+                        importe_total = match_main.group(12).strip()
+                    else:
+                        titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, comision_cambio, importe_total = ["Revisar Manualmente"] * 12
+                        
+                    if match_fecha:
+                        # Cortamos la hora, nos quedamos solo con la fecha (los primeros 10 caracteres)
+                        fecha_ejecucion = match_fecha.group(2).strip()[:10] 
+                        cambio_divisa = match_fecha.group(7).strip() if match_fecha.group(7) else "1,000 EUR"
+                    else:
+                        fechas = re.findall(r"\d{2}/\d{2}/\d{4}", texto)
+                        fecha_ejecucion = fechas[0] if fechas else "No encontrada"
+                        cambio_divisa = "Revisar"
+
+                    datos_operaciones.append({
+                        "Fecha": fecha_ejecucion,
+                        "Tipo": tipo_op,
+                        "Empresa": empresa,
+                        "ISIN": isin,
+                        "Títulos": titulos,
+                        "Precio": precio,
+                        "Importe Op.": importe_op,
+                        "Comisión ING": comision_ing,
+                        "Gastos Bolsa": gastos_bolsa,
+                        "Impuestos": impuestos,
+                        "Comisión Cambio": comision_cambio,
+                        "Importe Total": importe_total,
+                        "Mercado": mercado,
+                        "Divisa / Cambio": cambio_divisa,
+                        "Archivo": archivo.name
+                    })
+
+        if datos_operaciones:
+            st.success(f"¡Se procesaron {len(datos_operaciones)} archivo(s) con éxito!")
+            df_op = pd.DataFrame(datos_operaciones)
+            
+            # Ordenamos cronológicamente
+            df_op['Fecha_Temporal'] = pd.to_datetime(df_op['Fecha'], format='%d/%m/%Y', errors='coerce')
+            df_op = df_op.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
+            
+            st.dataframe(df_op)
+            csv_op = df_op.to_csv(index=False, sep=";").encode('utf-8-sig')
+            st.download_button(label="⬇️ Descargar Excel", data=csv_op, file_name='operaciones_bolsa.csv', mime='text/csv')
+
+# ==========================================
+# 🚀 APLICACIÓN 3: RENOMBRADOR DE PDFs
 # ==========================================
 elif opcion == "🗂️ Renombrador de PDFs":
     st.title("🗂️ Renombrador Automático de PDFs")
@@ -129,24 +203,23 @@ elif opcion == "🗂️ Renombrador de PDFs":
                     if not texto: texto = pdf.pages[0].extract_text()
                     
                     if texto:
-                        fechas_encontradas = re.findall(r"\d{2}/\d{2}/\d{4}", texto)
-                        if fechas_encontradas:
-                            fechas_ordenadas = sorted(fechas_encontradas, key=lambda f: f[6:] + f[3:5] + f[0:2])
-                            fecha_abono = fechas_ordenadas[0]
-                            fecha_formateada = datetime.strptime(fecha_abono, "%d/%m/%Y").strftime("%Y%m%d") 
-                        else: fecha_formateada = "00000000"
+                        fechas = re.findall(r"\d{2}/\d{2}/\d{4}", texto)
+                        fecha_abono = sorted(fechas, key=lambda f: f[6:] + f[3:5] + f[0:2])[0] if fechas else "00000000"
+                        if fecha_abono != "00000000":
+                            fecha_formateada = datetime.strptime(fecha_abono, "%d/%m/%Y").strftime("%Y%m%d")
+                        else:
+                            fecha_formateada = "00000000"
 
-                        empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Empresa")
+                        empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*", r"([A-Z0-9\s\.\-\&]+?)\s+[A-Z]{2}[A-Z0-9]{10}"], texto, "Empresa")
                         empresa = empresa.split("   ")[0].strip()
                         empresa_limpia = re.sub(r'\(.*?\)', '', empresa) 
                         empresa_limpia = re.sub(r'[^a-zA-Z0-9]', ' ', empresa_limpia) 
                         empresa_limpia = "".join([palabra.capitalize() for palabra in empresa_limpia.split()])
                         
                         nuevo_nombre = f"{fecha_formateada}-Movimiento{empresa_limpia}.pdf"
-                        
                         archivo.seek(0)
                         zip_file.writestr(nuevo_nombre, archivo.read())
                         st.write(f"✅ Listo: `{archivo.name}` ➡️ **`{nuevo_nombre}`**")
 
         st.success("¡Todos los archivos han sido empaquetados!")
-        st.download_button(label="📦 Descargar ZIP con PDFs renombrados", data=zip_buffer.getvalue(), file_name="Movimientos_Dividendos.zip", mime="application/zip")
+        st.download_button(label="📦 Descargar ZIP con PDFs renombrados", data=zip_buffer.getvalue(), file_name="Movimientos.zip", mime="application/zip")
