@@ -55,7 +55,8 @@ opcion = st.sidebar.radio(
     [
         "📊 Dividendos a Excel", 
         "🛒 Compras/Ventas a Excel", 
-        "🗂️ Renombrador de PDFs"
+        "🗂️ Renombrador de PDFs",
+        "🇬🇧 DRIPs (Informe Fiscal)"
     ]
 )
 
@@ -144,14 +145,10 @@ if opcion == "📊 Dividendos a Excel":
             col2.metric("Impuestos Pagados (Total)", formatear_moneda(total_impuestos))
             col3.metric("Neto a la Cuenta", formatear_moneda(total_neto))
             
-            # ==========================================
-            # 🌍 DESGLOSE FISCAL AGRUPADO (HACIENDA)
-            # ==========================================
             st.write("")
             st.subheader("🌍 Desglose Fiscal (Nacional vs Extranjero)")
             
             def agrupar_pais(pct):
-                # Agrupamos USA (15%), Francia (25%) y Alemania (26,375%) en uno solo
                 if pct in ["15%", "25%", "26,375%"]: 
                     return "Extranjero (USA, Francia, Alemania)"
                 elif pct == "0%": 
@@ -162,7 +159,7 @@ if opcion == "📊 Dividendos a Excel":
             df['Grupo_Pais'] = df['% retención en origen'].apply(agrupar_pais)
             
             grupos_mostrar = ["España (Nacional)", "Extranjero (USA, Francia, Alemania)"]
-            cols_paises = st.columns(2) # Usamos 2 columnas grandes para que se vea claro
+            cols_paises = st.columns(2)
             
             for i, grupo in enumerate(grupos_mostrar):
                 df_grupo = df[df['Grupo_Pais'] == grupo]
@@ -175,14 +172,12 @@ if opcion == "📊 Dividendos a Excel":
                     st.write(f"🏛️ Ret. en Origen Total: **{formatear_moneda(ret_origen_grupo)}**")
                     
             st.markdown("---")
-            # ==========================================
 
             st.markdown("**Top Pagadores (Neto por Empresa):**")
             datos_grafico = df.groupby('Empresa')['num_neto'].sum().reset_index().sort_values(by='num_neto', ascending=False)
             st.bar_chart(datos_grafico.set_index('Empresa'))
             st.markdown("---")
             
-            # Limpiamos todo rastro de las columnas temporales
             df = df.drop(columns=['num_bruto', 'num_neto', 'num_impuestos', 'num_ret_origen', 'num_ret_destino', 'Grupo_Pais'])
             
             st.subheader("📋 Tabla de Datos Detallada")
@@ -334,3 +329,100 @@ elif opcion == "🗂️ Renombrador de PDFs":
         texto_estado.empty()
         st.success("¡Todos los archivos procesables han sido empaquetados!")
         st.download_button(label="📦 Descargar ZIP con PDFs renombrados", data=zip_buffer.getvalue(), file_name="Movimientos_Organizados.zip", mime="application/zip")
+
+# ==========================================
+# 🚀 APLICACIÓN 4: DRIPS (STOCK DIVIDENDS)
+# ==========================================
+elif opcion == "🇬🇧 DRIPs (Informe Fiscal)":
+    st.title("🇬🇧 Extractor de DRIPs / Stock Dividends")
+    st.write("Sube tu **Informe Fiscal Anual de ING** en PDF para extraer los dividendos cobrados en acciones (Ideal para empresas inglesas).")
+
+    archivos_pdf_drips = st.file_uploader("Sube tu PDF de Datos Fiscales aquí", type=["pdf"], accept_multiple_files=True, key="drips")
+
+    if archivos_pdf_drips:
+        datos_drips = []
+        total_archivos = len(archivos_pdf_drips)
+        
+        barra_progreso = st.progress(0)
+        texto_estado = st.empty()
+
+        for i, archivo in enumerate(archivos_pdf_drips):
+            texto_estado.text(f"⏳ Analizando Informe Fiscal ({i+1}/{total_archivos}): {archivo.name}...")
+            
+            try:
+                # El informe fiscal tiene varias páginas, así que lo leemos todo
+                with pdfplumber.open(archivo) as pdf:
+                    texto_completo = ""
+                    for page in pdf.pages:
+                        texto_pagina = page.extract_text(layout=True)
+                        if not texto_pagina: texto_pagina = page.extract_text()
+                        if texto_pagina: texto_completo += texto_pagina + "\n"
+                    
+                    if texto_completo:
+                        # Patrón que detecta exactamente la línea donde ocurre un Stock Dividend
+                        lineas = texto_completo.split('\n')
+                        patron_drip = r"(.*?)\s+(Nacional|Internacional)\s+(\d{2}/\d{2}/\d{4})\s+STOCK DIVIDEND\s+(\d+)\s+([\d.,]+)\s*€"
+                        
+                        for idx, linea in enumerate(lineas):
+                            match = re.search(patron_drip, linea)
+                            if match:
+                                empresa_part1 = match.group(1).strip()
+                                mercado = match.group(2).strip()
+                                fecha = match.group(3).strip()
+                                titulos = match.group(4).strip()
+                                importe = match.group(5).strip()
+                                
+                                empresa_full = empresa_part1
+                                isin = "No encontrado"
+                                
+                                # Las empresas a veces están escritas en 2 o 3 líneas, leemos las siguientes para montar el nombre y cazar el ISIN
+                                for j in range(1, 4):
+                                    if idx + j >= len(lineas): break
+                                    linea_siguiente = lineas[idx + j].strip()
+                                    if not linea_siguiente: continue
+                                    
+                                    # Si llegamos a una línea que tiene formato de ISIN, terminamos
+                                    match_isin = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)", linea_siguiente)
+                                    if match_isin:
+                                        isin = match_isin.group(1)
+                                        break
+                                    else:
+                                        # Si no es ISIN, es parte del nombre de la empresa
+                                        palabra = linea_siguiente.split("   ")[0].strip()
+                                        if palabra:
+                                            empresa_full += " " + palabra
+
+                                # Guardamos los datos con Retención 0,00 tal y como se exige
+                                datos_drips.append({
+                                    "Fecha": fecha,
+                                    "Operación": "STOCK DIVIDEND",
+                                    "Empresa": empresa_full,
+                                    "ISIN": isin,
+                                    "Mercado": mercado,
+                                    "Nº Títulos Recibidos": titulos,
+                                    "Importe Bruto (€)": importe,
+                                    "Retención Origen (€)": "0,00",
+                                    "Retención Destino (€)": "0,00",
+                                    "Archivo": archivo.name
+                                })
+            except Exception as e:
+                st.warning(f"⚠️ Error al leer '{archivo.name}'. Se ha omitido.")
+            
+            gc.collect()
+            barra_progreso.progress((i + 1) / total_archivos)
+
+        texto_estado.empty()
+
+        if datos_drips:
+            st.success(f"¡Magia! Se encontraron y extrajeron {len(datos_drips)} operaciones de STOCK DIVIDEND.")
+            df_drips = pd.DataFrame(datos_drips)
+            
+            # Ordenamos cronológicamente
+            df_drips['Fecha_Temporal'] = pd.to_datetime(df_drips['Fecha'], format='%d/%m/%Y', errors='coerce')
+            df_drips = df_drips.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
+            
+            st.dataframe(df_drips)
+            csv_drips = df_drips.to_csv(index=False, sep=";").encode('utf-8-sig')
+            st.download_button(label="⬇️ Descargar Excel de DRIPs (.csv)", data=csv_drips, file_name='drips_fiscales.csv', mime='text/csv')
+        else:
+            st.info("No se han detectado operaciones de tipo STOCK DIVIDEND en el informe proporcionado.")
