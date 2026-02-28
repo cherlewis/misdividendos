@@ -63,7 +63,16 @@ if opcion == "📊 Dividendos a Excel":
 
     if archivos_pdf:
         datos_extraidos = []
-        for archivo in archivos_pdf:
+        total_archivos = len(archivos_pdf)
+        
+        # --- UI DE PROGRESO ---
+        texto_estado = st.empty()
+        barra_progreso = st.progress(0)
+        
+        for i, archivo in enumerate(archivos_pdf):
+            # Actualizamos el texto para saber por dónde va
+            texto_estado.text(f"⏳ Procesando documento {i+1} de {total_archivos}: {archivo.name}...")
+            
             with pdfplumber.open(archivo) as pdf:
                 texto = pdf.pages[0].extract_text(layout=True) 
                 if not texto: texto = pdf.pages[0].extract_text()
@@ -94,6 +103,12 @@ if opcion == "📊 Dividendos a Excel":
                         "Importe Bruto (€)": bruto, "Empresa": empresa, "Cuenta de Valores": cuenta_valores,
                         "Número de títulos": titulos, "Importe por título (€)": importe_titulo, "Cuenta Abono": cuenta_abono
                     })
+            
+            # Avanzamos la barra de progreso
+            barra_progreso.progress((i + 1) / total_archivos)
+
+        # Limpiamos el texto de estado al terminar
+        texto_estado.empty()
 
         if datos_extraidos:
             st.success(f"¡Se procesaron {len(datos_extraidos)} archivo(s) con éxito!")
@@ -115,7 +130,14 @@ elif opcion == "🛒 Compras/Ventas a Excel":
 
     if archivos_pdf_op:
         datos_operaciones = []
-        for archivo in archivos_pdf_op:
+        total_archivos = len(archivos_pdf_op)
+        
+        texto_estado = st.empty()
+        barra_progreso = st.progress(0)
+        
+        for i, archivo in enumerate(archivos_pdf_op):
+            texto_estado.text(f"⏳ Procesando documento {i+1} de {total_archivos}: {archivo.name}...")
+            
             with pdfplumber.open(archivo) as pdf:
                 texto = pdf.pages[0].extract_text(layout=True)
                 if not texto: texto = pdf.pages[0].extract_text()
@@ -168,6 +190,10 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                         "Divisa / Cambio": cambio_divisa,
                         "Archivo": archivo.name
                     })
+            
+            barra_progreso.progress((i + 1) / total_archivos)
+
+        texto_estado.empty()
 
         if datos_operaciones:
             st.success(f"¡Se procesaron {len(datos_operaciones)} archivo(s) con éxito!")
@@ -184,14 +210,21 @@ elif opcion == "🛒 Compras/Ventas a Excel":
 # ==========================================
 elif opcion == "🗂️ Renombrador de PDFs":
     st.title("🗂️ Renombrador Automático Inteligente")
-    st.write("Sube **cualquier PDF de ING** (dividendos, compras o ventas mezclados). El sistema los identificará y nombrará automáticamente.")
+    st.write("Sube **cualquier PDF de ING**. El sistema los identificará y nombrará automáticamente.")
 
     archivos_pdf_ren = st.file_uploader("Sube tus PDFs aquí", type=["pdf"], accept_multiple_files=True, key="ren")
 
     if archivos_pdf_ren:
         zip_buffer = io.BytesIO()
+        total_archivos = len(archivos_pdf_ren)
+        
+        texto_estado = st.empty()
+        barra_progreso = st.progress(0)
+        
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            for archivo in archivos_pdf_ren:
+            for i, archivo in enumerate(archivos_pdf_ren):
+                texto_estado.text(f"⏳ Renombrando documento {i+1} de {total_archivos}: {archivo.name}...")
+                
                 with pdfplumber.open(archivo) as pdf:
                     texto = pdf.pages[0].extract_text(layout=True)
                     if not texto: texto = pdf.pages[0].extract_text()
@@ -204,27 +237,22 @@ elif opcion == "🗂️ Renombrador de PDFs":
                         else:
                             fecha_formateada = "00000000"
 
-                        # === LÓGICA INTELIGENTE (¿Es Dividendo o Compra/Venta?) ===
                         patron_trade = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})"
                         match_trade = re.search(patron_trade, texto)
 
                         if match_trade:
-                            # 🛒 ES UNA COMPRA/VENTA
                             empresa = match_trade.group(2).strip()
-                            tipo_operacion = match_trade.group(5).strip().capitalize() # "Compra" o "Venta"
+                            tipo_operacion = match_trade.group(5).strip().capitalize()
                             es_trade = True
                         else:
-                            # 📊 ES UN DIVIDENDO
                             empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Empresa")
                             empresa = empresa.split("   ")[0].strip()
                             es_trade = False
 
-                        # Limpiamos el nombre de la empresa
                         empresa_limpia = re.sub(r'\(.*?\)', '', empresa) 
                         empresa_limpia = re.sub(r'[^a-zA-Z0-9]', ' ', empresa_limpia) 
                         empresa_limpia = "".join([palabra.capitalize() for palabra in empresa_limpia.split()])
                         
-                        # === NUEVA ESTRUCTURA DE NOMBRES EXACTA ===
                         if es_trade:
                             nuevo_nombre = f"{fecha_formateada}-{tipo_operacion}{empresa_limpia}.pdf"
                         else:
@@ -232,7 +260,9 @@ elif opcion == "🗂️ Renombrador de PDFs":
                             
                         archivo.seek(0)
                         zip_file.writestr(nuevo_nombre, archivo.read())
-                        st.write(f"✅ Listo: `{archivo.name}` ➡️ **`{nuevo_nombre}`**")
+                
+                barra_progreso.progress((i + 1) / total_archivos)
 
+        texto_estado.empty()
         st.success("¡Todos los archivos han sido analizados y empaquetados!")
         st.download_button(label="📦 Descargar ZIP con PDFs renombrados", data=zip_buffer.getvalue(), file_name="Movimientos_Organizados.zip", mime="application/zip")
