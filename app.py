@@ -4,6 +4,7 @@ import pandas as pd
 import re
 import io
 import zipfile
+import gc  # <--- NUEVO: El "Recolector de Basura" de memoria RAM
 from datetime import datetime
 
 st.set_page_config(page_title="Centro Financiero ING", layout="wide")
@@ -74,14 +75,12 @@ if opcion == "📊 Dividendos a Excel":
         datos_extraidos = []
         total_archivos = len(archivos_pdf)
         
-        # --- BARRAS DE PROGRESO ---
         barra_progreso = st.progress(0)
         texto_estado = st.empty()
 
         for i, archivo in enumerate(archivos_pdf):
             texto_estado.text(f"⏳ Procesando ({i+1}/{total_archivos}): {archivo.name}...")
             
-            # --- ESCUDO ANTI-CUELGUES ---
             try:
                 with pdfplumber.open(archivo) as pdf:
                     texto = pdf.pages[0].extract_text(layout=True) 
@@ -114,24 +113,23 @@ if opcion == "📊 Dividendos a Excel":
                             "Número de títulos": titulos, "Importe por título (€)": importe_titulo, "Cuenta Abono": cuenta_abono
                         })
             except Exception as e:
-                st.warning(f"⚠️ Error al procesar '{archivo.name}'. Puede que el PDF esté dañado o tenga otro formato. Se ha omitido.")
+                st.warning(f"⚠️ Error al procesar '{archivo.name}'. Se ha omitido.")
             
-            # Actualizamos la barra de progreso
+            # --- NUEVO: Vaciado de memoria RAM tras cada PDF ---
+            gc.collect() 
+            
             barra_progreso.progress((i + 1) / total_archivos)
 
-        # Ocultamos los textos de progreso cuando termina
         texto_estado.empty()
 
         if datos_extraidos:
             st.success(f"¡Se procesaron {len(datos_extraidos)} archivo(s) con éxito!")
             df = pd.DataFrame(datos_extraidos)
-            
             df['Fecha_Temporal'] = pd.to_datetime(df['Fecha Abono'], format='%d/%m/%Y', errors='coerce')
             df = df.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
             
             st.markdown("---")
             st.subheader("📈 Resumen de tus Dividendos")
-            
             df['num_bruto'] = df['Importe Bruto (€)'].apply(euro_a_numero)
             df['num_neto'] = df['Importe Neto (€)'].apply(euro_a_numero)
             df['num_impuestos'] = df['Retención en origen (€)'].apply(euro_a_numero) + df['Retención en destino (€)'].apply(euro_a_numero)
@@ -152,7 +150,6 @@ if opcion == "📊 Dividendos a Excel":
             st.markdown("---")
             
             df = df.drop(columns=['num_bruto', 'num_neto', 'num_impuestos'])
-            
             st.subheader("📋 Tabla de Datos Detallada")
             st.dataframe(df)
             csv = df.to_csv(index=False, sep=";").encode('utf-8-sig')
@@ -221,7 +218,10 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                         })
             except Exception as e:
                 st.warning(f"⚠️ Error al procesar '{archivo.name}'. Se ha omitido.")
-                
+            
+            # --- NUEVO: Vaciado de memoria RAM tras cada PDF ---
+            gc.collect()
+            
             barra_progreso.progress((i + 1) / total_archivos)
 
         texto_estado.empty()
@@ -295,6 +295,9 @@ elif opcion == "🗂️ Renombrador de PDFs":
                 except Exception as e:
                     st.warning(f"⚠️ Error al renombrar '{archivo.name}'. Se ha omitido.")
 
+                # --- NUEVO: Vaciado de memoria RAM tras cada PDF ---
+                gc.collect()
+                
                 barra_progreso.progress((i + 1) / total_archivos)
 
         texto_estado.empty()
