@@ -397,7 +397,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                 datos_informe.append({
                                     "Fecha Abono": fecha,
                                     "Concepto": f"STOCK DIVIDENDO ({empresa_full})",
-                                    "ISIN": isin_encontrado,  # <--- NUEVA COLUMNA ISIN
+                                    "ISIN": isin_encontrado, 
                                     "Importe Neto (€)": importe,
                                     "Retención en origen (€)": "0,00",
                                     "% retención en origen": "0%",
@@ -455,7 +455,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                 datos_informe.append({
                                     "Fecha Abono": anio_informe,
                                     "Concepto": f"DIVIDENDO ({empresa_full})",
-                                    "ISIN": isin_encontrado,  # <--- NUEVA COLUMNA ISIN
+                                    "ISIN": isin_encontrado, 
                                     "Importe Neto (€)": neto,
                                     "Retención en origen (€)": ret_origen,
                                     "% retención en origen": pct_origen,
@@ -481,8 +481,8 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
             st.success(f"¡Magia! Se extrajeron {len(datos_informe)} operaciones del informe fiscal (Dividendos y DRIPs).")
             df_informe = pd.DataFrame(datos_informe)
             
-            # Reordenamos las columnas para que el ISIN quede bonito al principio, después del Concepto
-            columnas_ordenadas = ["Fecha Abono", "Concepto", "ISIN", "Importe Neto (€)", "Retención en origen (€)", 
+            # === AQUÍ ESTÁ EL CAMBIO DE ORDEN: ISIN A LA SEGUNDA POSICIÓN ===
+            columnas_ordenadas = ["Fecha Abono", "ISIN", "Concepto", "Importe Neto (€)", "Retención en origen (€)", 
                                   "% retención en origen", "Retención en destino (€)", "% retención en destino", 
                                   "Importe Bruto (€)", "Empresa", "Cuenta de Valores", "Número de títulos", 
                                   "Importe por título (€)", "Cuenta Abono"]
@@ -490,6 +490,6 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
             
             st.dataframe(df_informe)
             csv_informe = df_informe.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar Excel (Con ISIN)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
+            st.download_button(label="⬇️ Descargar Excel (Con ISIN en 2ª Columna)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
         else:
             st.info("No se han detectado datos de dividendos en el informe proporcionado.")
