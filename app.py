@@ -127,7 +127,6 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                     match_int = re.search(patron_int, texto)
                     match_nac = re.search(patron_nac, texto) if not match_int else None
                     
-                    # MEJORA: El escáner de fecha ahora atrapa espacios para tipos de orden como "Por lo mejor" o "A mercado"
                     patron_fecha = r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})\s+(\d+)\s+([A-Za-z áéíóúÁÉÍÓÚ]+?)\s+([\d,]+\s+[A-Z]{3})(?:\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}))?(?:\s+([\d,]+\s+[A-Z]{3}))?\s+([\d,]+\s+[A-Z]{3})"
                     match_fecha = re.search(patron_fecha, texto)
 
@@ -143,7 +142,7 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                         
                     if match_fecha:
                         fecha_ejecucion = match_fecha.group(2).strip()[:10] 
-                        tipo_orden = match_fecha.group(4).strip() # AQUÍ ATRAPAMOS EL TIPO DE ORDEN
+                        tipo_orden = match_fecha.group(4).strip()
                         cambio_divisa = match_fecha.group(7).strip() if match_fecha.group(7) else "1,000 EUR"
                     else:
                         fechas = re.findall(r"\d{2}/\d{2}/\d{4}", texto)
@@ -154,7 +153,7 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                     datos_operaciones.append({
                         "Fecha": fecha_ejecucion,
                         "Operación": tipo_op,
-                        "Tipo Orden": tipo_orden, # AÑADIDO A LA TABLA
+                        "Tipo Orden": tipo_orden, 
                         "Empresa": empresa,
                         "ISIN": isin,
                         "Títulos": titulos,
@@ -181,11 +180,11 @@ elif opcion == "🛒 Compras/Ventas a Excel":
             st.download_button(label="⬇️ Descargar Excel", data=csv_op, file_name='operaciones_bolsa.csv', mime='text/csv')
 
 # ==========================================
-# 🚀 APLICACIÓN 3: RENOMBRADOR DE PDFs
+# 🚀 APLICACIÓN 3: RENOMBRADOR INTELIGENTE
 # ==========================================
 elif opcion == "🗂️ Renombrador de PDFs":
-    st.title("🗂️ Renombrador Automático de PDFs")
-    st.write("Sube tus PDFs. El sistema te devolverá un ZIP con los nombres: `YYYYMMDD-MovimientoEmpresa.pdf`")
+    st.title("🗂️ Renombrador Automático Inteligente")
+    st.write("Sube **cualquier PDF de ING** (dividendos, compras o ventas mezclados). El sistema los identificará y nombrará automáticamente.")
 
     archivos_pdf_ren = st.file_uploader("Sube tus PDFs aquí", type=["pdf"], accept_multiple_files=True, key="ren")
 
@@ -199,22 +198,41 @@ elif opcion == "🗂️ Renombrador de PDFs":
                     
                     if texto:
                         fechas = re.findall(r"\d{2}/\d{2}/\d{4}", texto)
-                        fecha_abono = sorted(fechas, key=lambda f: f[6:] + f[3:5] + f[0:2])[0] if fechas else "00000000"
-                        if fecha_abono != "00000000":
-                            fecha_formateada = datetime.strptime(fecha_abono, "%d/%m/%Y").strftime("%Y%m%d")
+                        fecha_ordenada = sorted(fechas, key=lambda f: f[6:] + f[3:5] + f[0:2])[0] if fechas else "00000000"
+                        if fecha_ordenada != "00000000":
+                            fecha_formateada = datetime.strptime(fecha_ordenada, "%d/%m/%Y").strftime("%Y%m%d")
                         else:
                             fecha_formateada = "00000000"
 
-                        empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*", r"([A-Z0-9\s\.\-\&]+?)\s+[A-Z]{2}[A-Z0-9]{10}"], texto, "Empresa")
-                        empresa = empresa.split("   ")[0].strip()
+                        # === LÓGICA INTELIGENTE (¿Es Dividendo o Compra/Venta?) ===
+                        patron_trade = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})"
+                        match_trade = re.search(patron_trade, texto)
+
+                        if match_trade:
+                            # 🛒 ES UNA COMPRA/VENTA
+                            empresa = match_trade.group(2).strip()
+                            tipo_operacion = match_trade.group(5).strip().capitalize() # "Compra" o "Venta"
+                            es_trade = True
+                        else:
+                            # 📊 ES UN DIVIDENDO
+                            empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Empresa")
+                            empresa = empresa.split("   ")[0].strip()
+                            es_trade = False
+
+                        # Limpiamos el nombre de la empresa
                         empresa_limpia = re.sub(r'\(.*?\)', '', empresa) 
                         empresa_limpia = re.sub(r'[^a-zA-Z0-9]', ' ', empresa_limpia) 
                         empresa_limpia = "".join([palabra.capitalize() for palabra in empresa_limpia.split()])
                         
-                        nuevo_nombre = f"{fecha_formateada}-Movimiento{empresa_limpia}.pdf"
+                        # === NUEVA ESTRUCTURA DE NOMBRES EXACTA ===
+                        if es_trade:
+                            nuevo_nombre = f"{fecha_formateada}-{tipo_operacion}{empresa_limpia}.pdf"
+                        else:
+                            nuevo_nombre = f"{fecha_formateada}-Dividendo{empresa_limpia}.pdf"
+                            
                         archivo.seek(0)
                         zip_file.writestr(nuevo_nombre, archivo.read())
                         st.write(f"✅ Listo: `{archivo.name}` ➡️ **`{nuevo_nombre}`**")
 
-        st.success("¡Todos los archivos han sido empaquetados!")
-        st.download_button(label="📦 Descargar ZIP con PDFs renombrados", data=zip_buffer.getvalue(), file_name="Movimientos.zip", mime="application/zip")
+        st.success("¡Todos los archivos han sido analizados y empaquetados!")
+        st.download_button(label="📦 Descargar ZIP con PDFs renombrados", data=zip_buffer.getvalue(), file_name="Movimientos_Organizados.zip", mime="application/zip")
