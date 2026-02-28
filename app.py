@@ -121,17 +121,14 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                 if not texto: texto = pdf.pages[0].extract_text()
                 
                 if texto:
-                    # 1. Escáner para operaciones INTERNACIONALES (con comisión de cambio)
                     patron_int = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})"
-                    
-                    # 2. Escáner para operaciones NACIONALES / ZONA EURO (sin comisión de cambio)
                     patron_nac = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})"
                     
                     match_int = re.search(patron_int, texto)
                     match_nac = re.search(patron_nac, texto) if not match_int else None
                     
-                    # Extraemos la fila de Fechas
-                    patron_fecha = r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})\s+(\d+)\s+([A-Za-z]+)\s+([\d,]+\s+[A-Z]{3})(?:\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}))?(?:\s+([\d,]+\s+[A-Z]{3}))?\s+([\d,]+\s+[A-Z]{3})"
+                    # MEJORA: El escáner de fecha ahora atrapa espacios para tipos de orden como "Por lo mejor" o "A mercado"
+                    patron_fecha = r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})\s+(\d+)\s+([A-Za-z áéíóúÁÉÍÓÚ]+?)\s+([\d,]+\s+[A-Z]{3})(?:\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}))?(?:\s+([\d,]+\s+[A-Z]{3}))?\s+([\d,]+\s+[A-Z]{3})"
                     match_fecha = re.search(patron_fecha, texto)
 
                     if match_int:
@@ -146,15 +143,18 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                         
                     if match_fecha:
                         fecha_ejecucion = match_fecha.group(2).strip()[:10] 
+                        tipo_orden = match_fecha.group(4).strip() # AQUÍ ATRAPAMOS EL TIPO DE ORDEN
                         cambio_divisa = match_fecha.group(7).strip() if match_fecha.group(7) else "1,000 EUR"
                     else:
                         fechas = re.findall(r"\d{2}/\d{2}/\d{4}", texto)
                         fecha_ejecucion = fechas[0] if fechas else "No encontrada"
+                        tipo_orden = "Desconocido"
                         cambio_divisa = "Revisar"
 
                     datos_operaciones.append({
                         "Fecha": fecha_ejecucion,
-                        "Tipo": tipo_op,
+                        "Operación": tipo_op,
+                        "Tipo Orden": tipo_orden, # AÑADIDO A LA TABLA
                         "Empresa": empresa,
                         "ISIN": isin,
                         "Títulos": titulos,
