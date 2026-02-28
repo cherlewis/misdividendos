@@ -36,24 +36,29 @@ def calcular_porcentaje(parte_str, total_str):
         return "0%"
 
 def euro_a_numero(euro_str):
+    """Convierte texto (ej. '1.200,50 EUR' o '32,93') a número matemático puro."""
     try:
-        return float(euro_str.replace('.', '').replace(',', '.'))
+        # Quitamos letras, símbolos del euro y espacios, dejamos solo números, comas y puntos
+        limpio = re.sub(r'[^\d,.-]', '', str(euro_str))
+        return float(limpio.replace('.', '').replace(',', '.'))
     except:
         return 0.0
 
 def formatear_moneda(numero):
+    """Formato para los KPIs visuales grandes"""
     return f"{numero:,.2f} €".replace(',', 'X').replace('.', ',').replace('X', '.')
 
-# NUEVA FUNCIÓN: Tope fiscal del 15% para doble imposición
+def formato_numero_tabla(numero):
+    """Formato exacto para la tabla Excel (sin el símbolo € para que Excel pueda operar si quieres)"""
+    return f"{numero:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+
 def calcular_retencion_recuperable(pct_str, bruto_str, ret_o_str):
     bruto = euro_a_numero(bruto_str)
     ret_o = euro_a_numero(ret_o_str)
-    
     if pct_str in ["15%", "25%", "26,375%"]:
         max_recuperable = bruto * 0.15
-        # Tomamos el menor entre lo retenido y el tope legal del 15%
         recuperable = min(ret_o, max_recuperable)
-        return f"{recuperable:.2f}".replace('.', ',')
+        return formato_numero_tabla(recuperable)
     return "0,00"
 
 # ==========================================
@@ -115,10 +120,7 @@ if opcion == "📊 Dividendos a Excel":
 
                         pct_origen = calcular_porcentaje(ret_origen, bruto)
                         pct_destino = calcular_porcentaje(ret_destino, bruto)
-                        
-                        # CÁLCULO DE LA NUEVA COLUMNA RECUPERABLE
                         ret_recuperable = calcular_retencion_recuperable(pct_origen, bruto, ret_origen)
-                        
                         cuenta_abono = buscar_dato([r"(1465\s*0100\s*93\s*\d{10})"], texto, "N/A")
                         cuenta_valores = buscar_dato([r"(91\s*\d{10})"], texto, "0")
 
@@ -128,7 +130,7 @@ if opcion == "📊 Dividendos a Excel":
                             "Retención en destino (€)": ret_destino, "% retención en destino": pct_destino,
                             "Importe Bruto (€)": bruto, "Empresa": empresa, "Cuenta de Valores": cuenta_valores,
                             "Número de títulos": titulos, "Importe por título (€)": importe_titulo, "Cuenta Abono": cuenta_abono,
-                            "Retención Recuperable (Max 15%) (€)": ret_recuperable # <--- NUEVA COLUMNA AL FINAL
+                            "Retención Recuperable (Max 15%) (€)": ret_recuperable
                         })
             except Exception as e:
                 st.warning(f"⚠️ Error al procesar '{archivo.name}'. Se ha omitido.")
@@ -144,17 +146,16 @@ if opcion == "📊 Dividendos a Excel":
             df['Fecha_Temporal'] = pd.to_datetime(df['Fecha Abono'], format='%d/%m/%Y', errors='coerce')
             df = df.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
             
+            # --- DASHBOARD VISUAL ---
             st.markdown("---")
             st.subheader("📈 Resumen de tus Dividendos")
-            
             df['num_bruto'] = df['Importe Bruto (€)'].apply(euro_a_numero)
             df['num_neto'] = df['Importe Neto (€)'].apply(euro_a_numero)
             df['num_ret_origen'] = df['Retención en origen (€)'].apply(euro_a_numero)
             df['num_ret_destino'] = df['Retención en destino (€)'].apply(euro_a_numero)
-            df['num_impuestos'] = df['num_ret_origen'] + df['num_ret_destino']
             
             total_bruto = df['num_bruto'].sum()
-            total_impuestos = df['num_impuestos'].sum()
+            total_impuestos = df['num_ret_origen'].sum() + df['num_ret_destino'].sum()
             total_neto = df['num_neto'].sum()
             
             col1, col2, col3 = st.columns(3)
@@ -164,38 +165,38 @@ if opcion == "📊 Dividendos a Excel":
             
             st.write("")
             st.subheader("🌍 Desglose Fiscal (Nacional vs Extranjero)")
-            
             def agrupar_pais(pct):
-                if pct in ["15%", "25%", "26,375%"]: 
-                    return "Extranjero (USA, Francia, Alemania)"
-                elif pct == "0%": 
-                    return "España (Nacional)"
-                else: 
-                    return "Otros"
-                
+                if pct in ["15%", "25%", "26,375%"]: return "Extranjero (USA, Francia, Alemania)"
+                elif pct == "0%": return "España (Nacional)"
+                else: return "Otros"
             df['Grupo_Pais'] = df['% retención en origen'].apply(agrupar_pais)
             
-            grupos_mostrar = ["España (Nacional)", "Extranjero (USA, Francia, Alemania)"]
             cols_paises = st.columns(2)
-            
-            for i, grupo in enumerate(grupos_mostrar):
+            for i, grupo in enumerate(["España (Nacional)", "Extranjero (USA, Francia, Alemania)"]):
                 df_grupo = df[df['Grupo_Pais'] == grupo]
-                bruto_grupo = df_grupo['num_bruto'].sum()
-                ret_origen_grupo = df_grupo['num_ret_origen'].sum()
-                
                 with cols_paises[i]:
                     st.markdown(f"**{grupo}**")
-                    st.write(f"💰 Bruto Total: **{formatear_moneda(bruto_grupo)}**")
-                    st.write(f"🏛️ Ret. en Origen Total: **{formatear_moneda(ret_origen_grupo)}**")
+                    st.write(f"💰 Bruto Total: **{formatear_moneda(df_grupo['num_bruto'].sum())}**")
+                    st.write(f"🏛️ Ret. en Origen Total: **{formatear_moneda(df_grupo['num_ret_origen'].sum())}**")
                     
             st.markdown("---")
-
             st.markdown("**Top Pagadores (Neto por Empresa):**")
-            datos_grafico = df.groupby('Empresa')['num_neto'].sum().reset_index().sort_values(by='num_neto', ascending=False)
-            st.bar_chart(datos_grafico.set_index('Empresa'))
+            st.bar_chart(df.groupby('Empresa')['num_neto'].sum().reset_index().sort_values(by='num_neto', ascending=False).set_index('Empresa'))
             st.markdown("---")
             
-            df = df.drop(columns=['num_bruto', 'num_neto', 'num_impuestos', 'num_ret_origen', 'num_ret_destino', 'Grupo_Pais'])
+            # Limpiamos auxiliares
+            df = df.drop(columns=['num_bruto', 'num_neto', 'num_ret_origen', 'num_ret_destino', 'Grupo_Pais'])
+            
+            # === NUEVO: AÑADIR FILA DE TOTALES ===
+            fila_totales = {col: "" for col in df.columns}
+            fila_totales["Fecha Abono"] = "TOTALES"
+            # Sumamos las columnas de importes
+            cols_a_sumar = ["Importe Neto (€)", "Retención en origen (€)", "Retención en destino (€)", "Importe Bruto (€)", "Retención Recuperable (Max 15%) (€)"]
+            for col in cols_a_sumar:
+                suma = df[col].apply(euro_a_numero).sum()
+                fila_totales[col] = formato_numero_tabla(suma)
+            
+            df = pd.concat([df, pd.DataFrame([fila_totales])], ignore_index=True)
             
             st.subheader("📋 Tabla de Datos Detallada")
             st.dataframe(df)
@@ -276,6 +277,17 @@ elif opcion == "🛒 Compras/Ventas a Excel":
             df_op = pd.DataFrame(datos_operaciones)
             df_op['Fecha_Temporal'] = pd.to_datetime(df_op['Fecha'], format='%d/%m/%Y', errors='coerce')
             df_op = df_op.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
+            
+            # === NUEVO: AÑADIR FILA DE TOTALES ===
+            fila_totales = {col: "" for col in df_op.columns}
+            fila_totales["Fecha"] = "TOTALES"
+            cols_a_sumar_op = ["Importe Op.", "Comisión ING", "Gastos Bolsa", "Impuestos", "Comisión Cambio", "Importe Total"]
+            for col in cols_a_sumar_op:
+                suma = df_op[col].apply(euro_a_numero).sum()
+                # Le añadimos el " EUR" para que visualmente cuadre con el resto de la columna en Compras
+                fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
+            
+            df_op = pd.concat([df_op, pd.DataFrame([fila_totales])], ignore_index=True)
             
             st.dataframe(df_op)
             csv_op = df_op.to_csv(index=False, sep=";").encode('utf-8-sig')
@@ -409,7 +421,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
 
                                 titulos_float = float(titulos) if titulos.isdigit() else 1.0
                                 importe_float = euro_a_numero(importe)
-                                imp_titulo = f"{(importe_float / titulos_float):.4f}".replace('.', ',') if titulos_float > 0 else "0,00"
+                                imp_titulo = formato_numero_tabla(importe_float / titulos_float) if titulos_float > 0 else "0,00"
 
                                 datos_informe.append({
                                     "Fecha Abono": fecha,
@@ -426,7 +438,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                     "Número de títulos": titulos,
                                     "Importe por título (€)": imp_titulo,
                                     "Cuenta Abono": "N/A",
-                                    "Retención Recuperable (Max 15%) (€)": "0,00" # <--- DRIPs no retienen nada
+                                    "Retención Recuperable (Max 15%) (€)": "0,00"
                                 })
                                 continue
                             
@@ -463,21 +475,16 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                 ret_o_num = euro_a_numero(ret_origen)
                                 ret_d_num = euro_a_numero(ret_destino)
                                 neto_num = bruto_num - ret_o_num - ret_d_num
-                                neto = f"{neto_num:.2f}".replace('.', ',')
                                 
                                 pct_origen = calcular_porcentaje(ret_origen, bruto)
                                 pct_destino = calcular_porcentaje(ret_destino, bruto)
-                                
-                                # CÁLCULO DE LA NUEVA COLUMNA RECUPERABLE
                                 ret_recuperable = calcular_retencion_recuperable(pct_origen, bruto, ret_origen)
-                                
-                                anio_informe = "Resumen 2024"
 
                                 datos_informe.append({
-                                    "Fecha Abono": anio_informe,
+                                    "Fecha Abono": "Resumen 2024",
                                     "Concepto": f"DIVIDENDO ({empresa_full})",
                                     "ISIN": isin_encontrado, 
-                                    "Importe Neto (€)": neto,
+                                    "Importe Neto (€)": formato_numero_tabla(neto_num),
                                     "Retención en origen (€)": ret_origen,
                                     "% retención en origen": pct_origen,
                                     "Retención en destino (€)": ret_destino,
@@ -488,7 +495,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                     "Número de títulos": "Varios", 
                                     "Importe por título (€)": "0,00",
                                     "Cuenta Abono": "N/A",
-                                    "Retención Recuperable (Max 15%) (€)": ret_recuperable # <--- NUEVA COLUMNA AL FINAL
+                                    "Retención Recuperable (Max 15%) (€)": ret_recuperable
                                 })
 
             except Exception as e:
@@ -509,8 +516,18 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                   "Importe por título (€)", "Cuenta Abono", "Retención Recuperable (Max 15%) (€)"]
             df_informe = df_informe[columnas_ordenadas]
             
+            # === NUEVO: AÑADIR FILA DE TOTALES ===
+            fila_totales = {col: "" for col in df_informe.columns}
+            fila_totales["Fecha Abono"] = "TOTALES"
+            cols_a_sumar_inf = ["Importe Neto (€)", "Retención en origen (€)", "Retención en destino (€)", "Importe Bruto (€)", "Retención Recuperable (Max 15%) (€)"]
+            for col in cols_a_sumar_inf:
+                suma = df_informe[col].apply(euro_a_numero).sum()
+                fila_totales[col] = formato_numero_tabla(suma)
+            
+            df_informe = pd.concat([df_informe, pd.DataFrame([fila_totales])], ignore_index=True)
+            
             st.dataframe(df_informe)
             csv_informe = df_informe.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar Excel (Con ISIN y Deducible)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
+            st.download_button(label="⬇️ Descargar Excel (Con ISIN y Totales)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
         else:
             st.info("No se han detectado datos de dividendos en el informe proporcionado.")
