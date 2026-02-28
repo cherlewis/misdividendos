@@ -4,7 +4,7 @@ import pandas as pd
 import re
 import io
 import zipfile
-import gc  # <--- NUEVO: El "Recolector de Basura" de memoria RAM
+import gc  
 from datetime import datetime
 
 st.set_page_config(page_title="Centro Financiero ING", layout="wide")
@@ -63,7 +63,7 @@ st.sidebar.markdown("---")
 st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
 
 # ==========================================
-# 🚀 APLICACIÓN 1: DIVIDENDOS
+# 🚀 APLICACIÓN 1: DIVIDENDOS Y DASHBOARD
 # ==========================================
 if opcion == "📊 Dividendos a Excel":
     st.title("📊 Extractor de Dividendos y Dashboard")
@@ -115,9 +115,7 @@ if opcion == "📊 Dividendos a Excel":
             except Exception as e:
                 st.warning(f"⚠️ Error al procesar '{archivo.name}'. Se ha omitido.")
             
-            # --- NUEVO: Vaciado de memoria RAM tras cada PDF ---
             gc.collect() 
-            
             barra_progreso.progress((i + 1) / total_archivos)
 
         texto_estado.empty()
@@ -130,9 +128,13 @@ if opcion == "📊 Dividendos a Excel":
             
             st.markdown("---")
             st.subheader("📈 Resumen de tus Dividendos")
+            
+            # --- CONVERSIONES MATEMÁTICAS ---
             df['num_bruto'] = df['Importe Bruto (€)'].apply(euro_a_numero)
             df['num_neto'] = df['Importe Neto (€)'].apply(euro_a_numero)
-            df['num_impuestos'] = df['Retención en origen (€)'].apply(euro_a_numero) + df['Retención en destino (€)'].apply(euro_a_numero)
+            df['num_ret_origen'] = df['Retención en origen (€)'].apply(euro_a_numero)
+            df['num_ret_destino'] = df['Retención en destino (€)'].apply(euro_a_numero)
+            df['num_impuestos'] = df['num_ret_origen'] + df['num_ret_destino']
             
             total_bruto = df['num_bruto'].sum()
             total_impuestos = df['num_impuestos'].sum()
@@ -140,16 +142,49 @@ if opcion == "📊 Dividendos a Excel":
             
             col1, col2, col3 = st.columns(3)
             col1.metric("Bruto Generado", formatear_moneda(total_bruto))
-            col2.metric("Impuestos Pagados", formatear_moneda(total_impuestos))
+            col2.metric("Impuestos Pagados (Total)", formatear_moneda(total_impuestos))
             col3.metric("Neto a la Cuenta", formatear_moneda(total_neto))
             
+            # ==========================================
+            # 🌍 NUEVO: DESGLOSE FISCAL INTERNACIONAL
+            # ==========================================
             st.write("")
+            st.subheader("🌍 Desglose Fiscal por País")
+            
+            def identificar_pais(pct):
+                if pct == "15%": return "USA"
+                elif pct == "25%": return "Francia"
+                elif pct == "26,375%": return "Alemania"
+                elif pct == "0%": return "España (Nacional)"
+                else: return "Otros"
+                
+            # Creamos una columna temporal para agrupar
+            df['Pais_Temp'] = df['% retención en origen'].apply(identificar_pais)
+            
+            paises_mostrar = ["España (Nacional)", "USA", "Francia", "Alemania"]
+            cols_paises = st.columns(4)
+            
+            for i, pais in enumerate(paises_mostrar):
+                df_pais = df[df['Pais_Temp'] == pais]
+                bruto_pais = df_pais['num_bruto'].sum()
+                ret_origen_pais = df_pais['num_ret_origen'].sum()
+                
+                with cols_paises[i]:
+                    st.markdown(f"**{pais}**")
+                    st.write(f"💰 Bruto: {formatear_moneda(bruto_pais)}")
+                    st.write(f"🏛️ Ret. Origen: {formatear_moneda(ret_origen_pais)}")
+                    
+            st.markdown("---")
+            # ==========================================
+
             st.markdown("**Top Pagadores (Neto por Empresa):**")
             datos_grafico = df.groupby('Empresa')['num_neto'].sum().reset_index().sort_values(by='num_neto', ascending=False)
             st.bar_chart(datos_grafico.set_index('Empresa'))
             st.markdown("---")
             
-            df = df.drop(columns=['num_bruto', 'num_neto', 'num_impuestos'])
+            # Limpiamos todo rastro de las columnas temporales para dejar el Excel perfecto
+            df = df.drop(columns=['num_bruto', 'num_neto', 'num_impuestos', 'num_ret_origen', 'num_ret_destino', 'Pais_Temp'])
+            
             st.subheader("📋 Tabla de Datos Detallada")
             st.dataframe(df)
             csv = df.to_csv(index=False, sep=";").encode('utf-8-sig')
@@ -219,9 +254,7 @@ elif opcion == "🛒 Compras/Ventas a Excel":
             except Exception as e:
                 st.warning(f"⚠️ Error al procesar '{archivo.name}'. Se ha omitido.")
             
-            # --- NUEVO: Vaciado de memoria RAM tras cada PDF ---
             gc.collect()
-            
             barra_progreso.progress((i + 1) / total_archivos)
 
         texto_estado.empty()
@@ -295,9 +328,7 @@ elif opcion == "🗂️ Renombrador de PDFs":
                 except Exception as e:
                     st.warning(f"⚠️ Error al renombrar '{archivo.name}'. Se ha omitido.")
 
-                # --- NUEVO: Vaciado de memoria RAM tras cada PDF ---
                 gc.collect()
-                
                 barra_progreso.progress((i + 1) / total_archivos)
 
         texto_estado.empty()
