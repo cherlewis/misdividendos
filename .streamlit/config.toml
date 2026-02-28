@@ -1,0 +1,9 @@
+[server]
+# Aumenta el límite de subida a 1000 Megabytes (1 GB)
+maxUploadSize = 1024
+
+# Aumenta el tamaño máximo del mensaje que viaja por la red
+maxMessageSize = 1024
+
+# Desactiva una protección extra que a veces bloquea subidas masivas (AxiosError)
+enableXsrfProtection = false
