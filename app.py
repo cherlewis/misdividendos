@@ -105,7 +105,7 @@ if opcion == "📊 Dividendos a Excel":
             st.download_button(label="⬇️ Descargar Excel", data=csv, file_name='dividendos.csv', mime='text/csv')
 
 # ==========================================
-# 🚀 APLICACIÓN 2: COMPRAS Y VENTAS (NUEVO)
+# 🚀 APLICACIÓN 2: COMPRAS Y VENTAS
 # ==========================================
 elif opcion == "🛒 Compras/Ventas a Excel":
     st.title("🛒 Extractor de Compras y Ventas")
@@ -121,33 +121,30 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                 if not texto: texto = pdf.pages[0].extract_text()
                 
                 if texto:
-                    # 1. Escáner de la fila principal (Títulos, Empresa, ISIN, Mercado, Importes...)
-                    patron_main = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})"
-                    match_main = re.search(patron_main, texto)
+                    # 1. Escáner para operaciones INTERNACIONALES (con comisión de cambio)
+                    patron_int = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})"
                     
-                    # 2. Escáner de la fila secundaria (Fechas de ejecución y Tipo de cambio)
+                    # 2. Escáner para operaciones NACIONALES / ZONA EURO (sin comisión de cambio)
+                    patron_nac = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})"
+                    
+                    match_int = re.search(patron_int, texto)
+                    match_nac = re.search(patron_nac, texto) if not match_int else None
+                    
+                    # Extraemos la fila de Fechas
                     patron_fecha = r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})\s+(\d+)\s+([A-Za-z]+)\s+([\d,]+\s+[A-Z]{3})(?:\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}))?(?:\s+([\d,]+\s+[A-Z]{3}))?\s+([\d,]+\s+[A-Z]{3})"
                     match_fecha = re.search(patron_fecha, texto)
 
-                    # Si el escáner encuentra los datos, los extraemos y limpiamos
-                    if match_main:
-                        titulos = match_main.group(1).strip()
-                        empresa = match_main.group(2).strip()
-                        isin = match_main.group(3).strip()
-                        mercado = match_main.group(4).strip()
-                        tipo_op = match_main.group(5).strip()
-                        precio = match_main.group(6).strip()
-                        importe_op = match_main.group(7).strip()
-                        comision_ing = match_main.group(8).strip()
-                        gastos_bolsa = match_main.group(9).strip()
-                        impuestos = match_main.group(10).strip()
-                        comision_cambio = match_main.group(11).strip()
-                        importe_total = match_main.group(12).strip()
+                    if match_int:
+                        datos = [g.strip() for g in match_int.groups()]
+                        titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, comision_cambio, importe_total = datos
+                    elif match_nac:
+                        datos = [g.strip() for g in match_nac.groups()]
+                        titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, importe_total = datos
+                        comision_cambio = "0,00 EUR"
                     else:
                         titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, comision_cambio, importe_total = ["Revisar Manualmente"] * 12
                         
                     if match_fecha:
-                        # Cortamos la hora, nos quedamos solo con la fecha (los primeros 10 caracteres)
                         fecha_ejecucion = match_fecha.group(2).strip()[:10] 
                         cambio_divisa = match_fecha.group(7).strip() if match_fecha.group(7) else "1,000 EUR"
                     else:
@@ -176,8 +173,6 @@ elif opcion == "🛒 Compras/Ventas a Excel":
         if datos_operaciones:
             st.success(f"¡Se procesaron {len(datos_operaciones)} archivo(s) con éxito!")
             df_op = pd.DataFrame(datos_operaciones)
-            
-            # Ordenamos cronológicamente
             df_op['Fecha_Temporal'] = pd.to_datetime(df_op['Fecha'], format='%d/%m/%Y', errors='coerce')
             df_op = df_op.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
             
