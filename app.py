@@ -129,7 +129,6 @@ if opcion == "📊 Dividendos a Excel":
             st.markdown("---")
             st.subheader("📈 Resumen de tus Dividendos")
             
-            # --- CONVERSIONES MATEMÁTICAS ---
             df['num_bruto'] = df['Importe Bruto (€)'].apply(euro_a_numero)
             df['num_neto'] = df['Importe Neto (€)'].apply(euro_a_numero)
             df['num_ret_origen'] = df['Retención en origen (€)'].apply(euro_a_numero)
@@ -146,33 +145,34 @@ if opcion == "📊 Dividendos a Excel":
             col3.metric("Neto a la Cuenta", formatear_moneda(total_neto))
             
             # ==========================================
-            # 🌍 NUEVO: DESGLOSE FISCAL INTERNACIONAL
+            # 🌍 DESGLOSE FISCAL AGRUPADO (HACIENDA)
             # ==========================================
             st.write("")
-            st.subheader("🌍 Desglose Fiscal por País")
+            st.subheader("🌍 Desglose Fiscal (Nacional vs Extranjero)")
             
-            def identificar_pais(pct):
-                if pct == "15%": return "USA"
-                elif pct == "25%": return "Francia"
-                elif pct == "26,375%": return "Alemania"
-                elif pct == "0%": return "España (Nacional)"
-                else: return "Otros"
+            def agrupar_pais(pct):
+                # Agrupamos USA (15%), Francia (25%) y Alemania (26,375%) en uno solo
+                if pct in ["15%", "25%", "26,375%"]: 
+                    return "Extranjero (USA, Francia, Alemania)"
+                elif pct == "0%": 
+                    return "España (Nacional)"
+                else: 
+                    return "Otros"
                 
-            # Creamos una columna temporal para agrupar
-            df['Pais_Temp'] = df['% retención en origen'].apply(identificar_pais)
+            df['Grupo_Pais'] = df['% retención en origen'].apply(agrupar_pais)
             
-            paises_mostrar = ["España (Nacional)", "USA", "Francia", "Alemania"]
-            cols_paises = st.columns(4)
+            grupos_mostrar = ["España (Nacional)", "Extranjero (USA, Francia, Alemania)"]
+            cols_paises = st.columns(2) # Usamos 2 columnas grandes para que se vea claro
             
-            for i, pais in enumerate(paises_mostrar):
-                df_pais = df[df['Pais_Temp'] == pais]
-                bruto_pais = df_pais['num_bruto'].sum()
-                ret_origen_pais = df_pais['num_ret_origen'].sum()
+            for i, grupo in enumerate(grupos_mostrar):
+                df_grupo = df[df['Grupo_Pais'] == grupo]
+                bruto_grupo = df_grupo['num_bruto'].sum()
+                ret_origen_grupo = df_grupo['num_ret_origen'].sum()
                 
                 with cols_paises[i]:
-                    st.markdown(f"**{pais}**")
-                    st.write(f"💰 Bruto: {formatear_moneda(bruto_pais)}")
-                    st.write(f"🏛️ Ret. Origen: {formatear_moneda(ret_origen_pais)}")
+                    st.markdown(f"**{grupo}**")
+                    st.write(f"💰 Bruto Total: **{formatear_moneda(bruto_grupo)}**")
+                    st.write(f"🏛️ Ret. en Origen Total: **{formatear_moneda(ret_origen_grupo)}**")
                     
             st.markdown("---")
             # ==========================================
@@ -182,8 +182,8 @@ if opcion == "📊 Dividendos a Excel":
             st.bar_chart(datos_grafico.set_index('Empresa'))
             st.markdown("---")
             
-            # Limpiamos todo rastro de las columnas temporales para dejar el Excel perfecto
-            df = df.drop(columns=['num_bruto', 'num_neto', 'num_impuestos', 'num_ret_origen', 'num_ret_destino', 'Pais_Temp'])
+            # Limpiamos todo rastro de las columnas temporales
+            df = df.drop(columns=['num_bruto', 'num_neto', 'num_impuestos', 'num_ret_origen', 'num_ret_destino', 'Grupo_Pais'])
             
             st.subheader("📋 Tabla de Datos Detallada")
             st.dataframe(df)
