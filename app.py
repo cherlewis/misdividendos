@@ -56,7 +56,7 @@ opcion = st.sidebar.radio(
         "📊 Dividendos a Excel", 
         "🛒 Compras/Ventas a Excel", 
         "🗂️ Renombrador de PDFs",
-        "🇬🇧 DRIPs (Informe Fiscal)"
+        "📄 Informe Fiscal (Div. y DRIPs)"
     ]
 )
 
@@ -331,22 +331,22 @@ elif opcion == "🗂️ Renombrador de PDFs":
         st.download_button(label="📦 Descargar ZIP con PDFs renombrados", data=zip_buffer.getvalue(), file_name="Movimientos_Organizados.zip", mime="application/zip")
 
 # ==========================================
-# 🚀 APLICACIÓN 4: DRIPS (STOCK DIVIDENDS)
+# 🚀 APLICACIÓN 4: INFORME FISCAL (DIVIDENDOS Y DRIPS)
 # ==========================================
-elif opcion == "🇬🇧 DRIPs (Informe Fiscal)":
-    st.title("🇬🇧 Extractor de DRIPs / Stock Dividends")
-    st.write("Sube tu **Informe Fiscal Anual de ING** en PDF para extraer los dividendos cobrados en acciones.")
+elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
+    st.title("📄 Extractor Total del Informe Fiscal")
+    st.write("Sube tu **Informe Fiscal Anual de ING** en PDF para extraer de golpe **todos los Dividendos en efectivo** y los **DRIPs (acciones)**.")
 
-    archivos_pdf_drips = st.file_uploader("Sube tu PDF de Datos Fiscales aquí", type=["pdf"], accept_multiple_files=True, key="drips")
+    archivos_pdf_inf = st.file_uploader("Sube tu PDF de Datos Fiscales aquí", type=["pdf"], accept_multiple_files=True, key="inf")
 
-    if archivos_pdf_drips:
-        datos_drips = []
-        total_archivos = len(archivos_pdf_drips)
+    if archivos_pdf_inf:
+        datos_informe = []
+        total_archivos = len(archivos_pdf_inf)
         
         barra_progreso = st.progress(0)
         texto_estado = st.empty()
 
-        for i, archivo in enumerate(archivos_pdf_drips):
+        for i, archivo in enumerate(archivos_pdf_inf):
             texto_estado.text(f"⏳ Analizando Informe Fiscal ({i+1}/{total_archivos}): {archivo.name}...")
             
             try:
@@ -359,18 +359,27 @@ elif opcion == "🇬🇧 DRIPs (Informe Fiscal)":
                     
                     if texto_completo:
                         lineas = texto_completo.split('\n')
+                        
+                        # Escáner 1: Para los DRIPs (Stock Dividends)
                         patron_drip = r"(.*?)\s+(Nacional|Internacional)\s+(\d{2}/\d{2}/\d{4})\s+STOCK DIVIDEND\s+(\d+)\s+([\d.,]+)\s*€"
                         
+                        # Escáner 2: Para los Dividendos Ordinarios (Nacionales e Internacionales)
+                        # Grupo 1: Empresa, Grupo 2: Mercado, Grupo 3: Bruto, Grupo 4: Ret 1, Grupo 5: Ret 2 (Opcional)
+                        patron_div = r"(.*?)\s+(Nacional|Internacional)\s+DIVIDENDO\s+([\d,.]+)\s*€\s+([\d,.]+)\s*€(?:\s+([\d,.]+)\s*€)?"
+                        
                         for idx, linea in enumerate(lineas):
-                            match = re.search(patron_drip, linea)
-                            if match:
-                                empresa_part1 = match.group(1).strip()
-                                mercado = match.group(2).strip()
-                                fecha = match.group(3).strip()
-                                titulos = match.group(4).strip()
-                                importe = match.group(5).strip()
+                            
+                            # === EXTRACCIÓN DE DRIPS ===
+                            match_drip = re.search(patron_drip, linea)
+                            if match_drip:
+                                empresa_part1 = match_drip.group(1).strip()
+                                mercado = match_drip.group(2).strip()
+                                fecha = match_drip.group(3).strip()
+                                titulos = match_drip.group(4).strip()
+                                importe = match_drip.group(5).strip()
                                 
                                 empresa_full = empresa_part1
+                                isin_encontrado = "No encontrado"
                                 
                                 for j in range(1, 4):
                                     if idx + j >= len(lineas): break
@@ -379,18 +388,17 @@ elif opcion == "🇬🇧 DRIPs (Informe Fiscal)":
                                     
                                     match_isin = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)", linea_siguiente)
                                     if match_isin:
+                                        isin_encontrado = match_isin.group(1)
                                         break
                                     else:
                                         palabra = linea_siguiente.split("   ")[0].strip()
                                         if palabra: empresa_full += " " + palabra
 
-                                # Cálculo matemático del Importe por Título
                                 titulos_float = float(titulos) if titulos.isdigit() else 1.0
                                 importe_float = euro_a_numero(importe)
                                 imp_titulo = f"{(importe_float / titulos_float):.4f}".replace('.', ',') if titulos_float > 0 else "0,00"
 
-                                # Generamos el diccionario EXACTAMENTE IGUAL que en Dividendos
-                                datos_drips.append({
+                                datos_informe.append({
                                     "Fecha Abono": fecha,
                                     "Concepto": f"STOCK DIVIDENDO ({empresa_full})",
                                     "Importe Neto (€)": importe,
@@ -405,6 +413,68 @@ elif opcion == "🇬🇧 DRIPs (Informe Fiscal)":
                                     "Importe por título (€)": imp_titulo,
                                     "Cuenta Abono": "N/A"
                                 })
+                                continue # Pasamos a la siguiente línea del PDF
+                            
+                            # === EXTRACCIÓN DE DIVIDENDOS ORDINARIOS ===
+                            match_div = re.search(patron_div, linea)
+                            if match_div:
+                                empresa_raw = match_div.group(1).strip()
+                                mercado = match_div.group(2).strip()
+                                bruto = match_div.group(3).strip()
+                                
+                                if mercado == "Nacional":
+                                    ret_origen = "0,00"
+                                    ret_destino = match_div.group(4).strip()
+                                else:
+                                    ret_origen = match_div.group(4).strip()
+                                    # La retención destino en internacionales puede no estar en la misma línea, pero si está, la cogemos
+                                    ret_destino = match_div.group(5).strip() if match_div.group(5) else "0,00"
+                                
+                                # Limpiamos el nombre de la empresa y extraemos el ISIN si viene pegado (Ej: "EBRO FOODS (ES0112...)")
+                                match_isin = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)", empresa_raw)
+                                if match_isin:
+                                    isin = match_isin.group(1)
+                                    empresa_full = empresa_raw.replace(f"({isin})", "").strip()
+                                else:
+                                    empresa_full = empresa_raw
+                                    # Si no está en esta línea, miramos en las dos siguientes
+                                    for j in range(1, 3):
+                                        if idx + j < len(lineas):
+                                            linea_siguiente = lineas[idx + j].strip()
+                                            match_isin_next = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)", linea_siguiente)
+                                            if match_isin_next:
+                                                isin = match_isin_next.group(1)
+                                                break
+
+                                # Cálculo matemático del Neto
+                                bruto_num = euro_a_numero(bruto)
+                                ret_o_num = euro_a_numero(ret_origen)
+                                ret_d_num = euro_a_numero(ret_destino)
+                                neto_num = bruto_num - ret_o_num - ret_d_num
+                                neto = f"{neto_num:.2f}".replace('.', ',')
+                                
+                                pct_origen = calcular_porcentaje(ret_origen, bruto)
+                                pct_destino = calcular_porcentaje(ret_destino, bruto)
+                                
+                                # Extraemos el año del nombre del informe (o fijamos 2024 temporalmente)
+                                anio_informe = "Resumen 2024"
+
+                                datos_informe.append({
+                                    "Fecha Abono": anio_informe,
+                                    "Concepto": f"DIVIDENDO ({empresa_full})",
+                                    "Importe Neto (€)": neto,
+                                    "Retención en origen (€)": ret_origen,
+                                    "% retención en origen": pct_origen,
+                                    "Retención en destino (€)": ret_destino,
+                                    "% retención en destino": pct_destino,
+                                    "Importe Bruto (€)": bruto,
+                                    "Empresa": empresa_full,
+                                    "Cuenta de Valores": "0",
+                                    "Número de títulos": "Varios", 
+                                    "Importe por título (€)": "0,00",
+                                    "Cuenta Abono": "N/A"
+                                })
+
             except Exception as e:
                 st.warning(f"⚠️ Error al leer '{archivo.name}'. Se ha omitido.")
             
@@ -413,16 +483,12 @@ elif opcion == "🇬🇧 DRIPs (Informe Fiscal)":
 
         texto_estado.empty()
 
-        if datos_drips:
-            st.success(f"¡Magia! Se encontraron y extrajeron {len(datos_drips)} operaciones de STOCK DIVIDEND.")
-            df_drips = pd.DataFrame(datos_drips)
+        if datos_informe:
+            st.success(f"¡Magia! Se extrajeron {len(datos_informe)} operaciones del informe fiscal (Dividendos y DRIPs).")
+            df_informe = pd.DataFrame(datos_informe)
             
-            # Ordenamos cronológicamente usando la columna "Fecha Abono" (mismo nombre que en Dividendos)
-            df_drips['Fecha_Temporal'] = pd.to_datetime(df_drips['Fecha Abono'], format='%d/%m/%Y', errors='coerce')
-            df_drips = df_drips.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
-            
-            st.dataframe(df_drips)
-            csv_drips = df_drips.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar Excel (Mismo Formato Dividendos)", data=csv_drips, file_name='drips_fiscales.csv', mime='text/csv')
+            st.dataframe(df_informe)
+            csv_informe = df_informe.to_csv(index=False, sep=";").encode('utf-8-sig')
+            st.download_button(label="⬇️ Descargar Excel (Formato Unificado)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
         else:
-            st.info("No se han detectado operaciones de tipo STOCK DIVIDEND en el informe proporcionado.")
+            st.info("No se han detectado datos de dividendos en el informe proporcionado.")
