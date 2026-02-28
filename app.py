@@ -34,6 +34,17 @@ def calcular_porcentaje(parte_str, total_str):
     except:
         return "0%"
 
+def euro_a_numero(euro_str):
+    """Convierte un texto con formato '32,93' o '1.000,00' a número matemático."""
+    try:
+        return float(euro_str.replace('.', '').replace(',', '.'))
+    except:
+        return 0.0
+
+def formatear_moneda(numero):
+    """Convierte un número matemático de vuelta a formato europeo '1.000,00 €'"""
+    return f"{numero:,.2f} €".replace(',', 'X').replace('.', ',').replace('X', '.')
+
 # ==========================================
 # 🧭 MENÚ LATERAL
 # ==========================================
@@ -56,23 +67,14 @@ st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
 # 🚀 APLICACIÓN 1: DIVIDENDOS
 # ==========================================
 if opcion == "📊 Dividendos a Excel":
-    st.title("📊 Extractor de Dividendos")
-    st.write("Sube tus recibos de dividendos en PDF de ING y obtén tu tabla.")
+    st.title("📊 Extractor de Dividendos y Dashboard")
+    st.write("Sube tus recibos de dividendos en PDF de ING para extraer los datos y ver tu resumen.")
 
     archivos_pdf = st.file_uploader("Sube tus PDFs aquí", type=["pdf"], accept_multiple_files=True, key="div")
 
     if archivos_pdf:
         datos_extraidos = []
-        total_archivos = len(archivos_pdf)
-        
-        # --- UI DE PROGRESO ---
-        texto_estado = st.empty()
-        barra_progreso = st.progress(0)
-        
-        for i, archivo in enumerate(archivos_pdf):
-            # Actualizamos el texto para saber por dónde va
-            texto_estado.text(f"⏳ Procesando documento {i+1} de {total_archivos}: {archivo.name}...")
-            
+        for archivo in archivos_pdf:
             with pdfplumber.open(archivo) as pdf:
                 texto = pdf.pages[0].extract_text(layout=True) 
                 if not texto: texto = pdf.pages[0].extract_text()
@@ -103,21 +105,52 @@ if opcion == "📊 Dividendos a Excel":
                         "Importe Bruto (€)": bruto, "Empresa": empresa, "Cuenta de Valores": cuenta_valores,
                         "Número de títulos": titulos, "Importe por título (€)": importe_titulo, "Cuenta Abono": cuenta_abono
                     })
-            
-            # Avanzamos la barra de progreso
-            barra_progreso.progress((i + 1) / total_archivos)
-
-        # Limpiamos el texto de estado al terminar
-        texto_estado.empty()
 
         if datos_extraidos:
             st.success(f"¡Se procesaron {len(datos_extraidos)} archivo(s) con éxito!")
             df = pd.DataFrame(datos_extraidos)
+            
+            # Ordenar por fecha temporal
             df['Fecha_Temporal'] = pd.to_datetime(df['Fecha Abono'], format='%d/%m/%Y', errors='coerce')
             df = df.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
+            
+            # --- DASHBOARD VISUAL ---
+            st.markdown("---")
+            st.subheader("📈 Resumen de tus Dividendos")
+            
+            # Calculamos los totales
+            df['num_bruto'] = df['Importe Bruto (€)'].apply(euro_a_numero)
+            df['num_neto'] = df['Importe Neto (€)'].apply(euro_a_numero)
+            df['num_impuestos'] = df['Retención en origen (€)'].apply(euro_a_numero) + df['Retención en destino (€)'].apply(euro_a_numero)
+            
+            total_bruto = df['num_bruto'].sum()
+            total_impuestos = df['num_impuestos'].sum()
+            total_neto = df['num_neto'].sum()
+            
+            # Mostramos las tarjetas superiores (KPIs)
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Bruto Generado", formatear_moneda(total_bruto))
+            col2.metric("Impuestos Pagados (Origen+Destino)", formatear_moneda(total_impuestos))
+            col3.metric("Neto a la Cuenta", formatear_moneda(total_neto))
+            
+            st.write("") # Espacio
+            
+            # Gráfico de barras: Dividendos por empresa
+            st.markdown("**Top Pagadores (Neto por Empresa):**")
+            datos_grafico = df.groupby('Empresa')['num_neto'].sum().reset_index()
+            # Ordenamos de mayor a menor para que el gráfico quede más bonito
+            datos_grafico = datos_grafico.sort_values(by='num_neto', ascending=False)
+            st.bar_chart(datos_grafico.set_index('Empresa'))
+            st.markdown("---")
+            
+            # Limpiamos las columnas matemáticas auxiliares antes de mostrar la tabla
+            df = df.drop(columns=['num_bruto', 'num_neto', 'num_impuestos'])
+            
+            # --- TABLA Y DESCARGA ---
+            st.subheader("📋 Tabla de Datos Detallada")
             st.dataframe(df)
             csv = df.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar Excel", data=csv, file_name='dividendos.csv', mime='text/csv')
+            st.download_button(label="⬇️ Descargar Excel (.csv)", data=csv, file_name='dividendos.csv', mime='text/csv')
 
 # ==========================================
 # 🚀 APLICACIÓN 2: COMPRAS Y VENTAS
@@ -130,14 +163,7 @@ elif opcion == "🛒 Compras/Ventas a Excel":
 
     if archivos_pdf_op:
         datos_operaciones = []
-        total_archivos = len(archivos_pdf_op)
-        
-        texto_estado = st.empty()
-        barra_progreso = st.progress(0)
-        
-        for i, archivo in enumerate(archivos_pdf_op):
-            texto_estado.text(f"⏳ Procesando documento {i+1} de {total_archivos}: {archivo.name}...")
-            
+        for archivo in archivos_pdf_op:
             with pdfplumber.open(archivo) as pdf:
                 texto = pdf.pages[0].extract_text(layout=True)
                 if not texto: texto = pdf.pages[0].extract_text()
@@ -190,10 +216,6 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                         "Divisa / Cambio": cambio_divisa,
                         "Archivo": archivo.name
                     })
-            
-            barra_progreso.progress((i + 1) / total_archivos)
-
-        texto_estado.empty()
 
         if datos_operaciones:
             st.success(f"¡Se procesaron {len(datos_operaciones)} archivo(s) con éxito!")
@@ -210,21 +232,14 @@ elif opcion == "🛒 Compras/Ventas a Excel":
 # ==========================================
 elif opcion == "🗂️ Renombrador de PDFs":
     st.title("🗂️ Renombrador Automático Inteligente")
-    st.write("Sube **cualquier PDF de ING**. El sistema los identificará y nombrará automáticamente.")
+    st.write("Sube **cualquier PDF de ING** (dividendos, compras o ventas mezclados). El sistema los identificará y nombrará automáticamente.")
 
     archivos_pdf_ren = st.file_uploader("Sube tus PDFs aquí", type=["pdf"], accept_multiple_files=True, key="ren")
 
     if archivos_pdf_ren:
         zip_buffer = io.BytesIO()
-        total_archivos = len(archivos_pdf_ren)
-        
-        texto_estado = st.empty()
-        barra_progreso = st.progress(0)
-        
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            for i, archivo in enumerate(archivos_pdf_ren):
-                texto_estado.text(f"⏳ Renombrando documento {i+1} de {total_archivos}: {archivo.name}...")
-                
+            for archivo in archivos_pdf_ren:
                 with pdfplumber.open(archivo) as pdf:
                     texto = pdf.pages[0].extract_text(layout=True)
                     if not texto: texto = pdf.pages[0].extract_text()
@@ -260,9 +275,7 @@ elif opcion == "🗂️ Renombrador de PDFs":
                             
                         archivo.seek(0)
                         zip_file.writestr(nuevo_nombre, archivo.read())
-                
-                barra_progreso.progress((i + 1) / total_archivos)
+                        st.write(f"✅ Listo: `{archivo.name}` ➡️ **`{nuevo_nombre}`**")
 
-        texto_estado.empty()
         st.success("¡Todos los archivos han sido analizados y empaquetados!")
         st.download_button(label="📦 Descargar ZIP con PDFs renombrados", data=zip_buffer.getvalue(), file_name="Movimientos_Organizados.zip", mime="application/zip")
