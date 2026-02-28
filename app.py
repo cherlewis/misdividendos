@@ -44,6 +44,18 @@ def euro_a_numero(euro_str):
 def formatear_moneda(numero):
     return f"{numero:,.2f} €".replace(',', 'X').replace('.', ',').replace('X', '.')
 
+# NUEVA FUNCIÓN: Tope fiscal del 15% para doble imposición
+def calcular_retencion_recuperable(pct_str, bruto_str, ret_o_str):
+    bruto = euro_a_numero(bruto_str)
+    ret_o = euro_a_numero(ret_o_str)
+    
+    if pct_str in ["15%", "25%", "26,375%"]:
+        max_recuperable = bruto * 0.15
+        # Tomamos el menor entre lo retenido y el tope legal del 15%
+        recuperable = min(ret_o, max_recuperable)
+        return f"{recuperable:.2f}".replace('.', ',')
+    return "0,00"
+
 # ==========================================
 # 🧭 MENÚ LATERAL
 # ==========================================
@@ -103,6 +115,10 @@ if opcion == "📊 Dividendos a Excel":
 
                         pct_origen = calcular_porcentaje(ret_origen, bruto)
                         pct_destino = calcular_porcentaje(ret_destino, bruto)
+                        
+                        # CÁLCULO DE LA NUEVA COLUMNA RECUPERABLE
+                        ret_recuperable = calcular_retencion_recuperable(pct_origen, bruto, ret_origen)
+                        
                         cuenta_abono = buscar_dato([r"(1465\s*0100\s*93\s*\d{10})"], texto, "N/A")
                         cuenta_valores = buscar_dato([r"(91\s*\d{10})"], texto, "0")
 
@@ -111,7 +127,8 @@ if opcion == "📊 Dividendos a Excel":
                             "Retención en origen (€)": ret_origen, "% retención en origen": pct_origen,
                             "Retención en destino (€)": ret_destino, "% retención en destino": pct_destino,
                             "Importe Bruto (€)": bruto, "Empresa": empresa, "Cuenta de Valores": cuenta_valores,
-                            "Número de títulos": titulos, "Importe por título (€)": importe_titulo, "Cuenta Abono": cuenta_abono
+                            "Número de títulos": titulos, "Importe por título (€)": importe_titulo, "Cuenta Abono": cuenta_abono,
+                            "Retención Recuperable (Max 15%) (€)": ret_recuperable # <--- NUEVA COLUMNA AL FINAL
                         })
             except Exception as e:
                 st.warning(f"⚠️ Error al procesar '{archivo.name}'. Se ha omitido.")
@@ -408,7 +425,8 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                     "Cuenta de Valores": "0",
                                     "Número de títulos": titulos,
                                     "Importe por título (€)": imp_titulo,
-                                    "Cuenta Abono": "N/A"
+                                    "Cuenta Abono": "N/A",
+                                    "Retención Recuperable (Max 15%) (€)": "0,00" # <--- DRIPs no retienen nada
                                 })
                                 continue
                             
@@ -450,6 +468,9 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                 pct_origen = calcular_porcentaje(ret_origen, bruto)
                                 pct_destino = calcular_porcentaje(ret_destino, bruto)
                                 
+                                # CÁLCULO DE LA NUEVA COLUMNA RECUPERABLE
+                                ret_recuperable = calcular_retencion_recuperable(pct_origen, bruto, ret_origen)
+                                
                                 anio_informe = "Resumen 2024"
 
                                 datos_informe.append({
@@ -466,7 +487,8 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                     "Cuenta de Valores": "0",
                                     "Número de títulos": "Varios", 
                                     "Importe por título (€)": "0,00",
-                                    "Cuenta Abono": "N/A"
+                                    "Cuenta Abono": "N/A",
+                                    "Retención Recuperable (Max 15%) (€)": ret_recuperable # <--- NUEVA COLUMNA AL FINAL
                                 })
 
             except Exception as e:
@@ -481,15 +503,14 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
             st.success(f"¡Magia! Se extrajeron {len(datos_informe)} operaciones del informe fiscal (Dividendos y DRIPs).")
             df_informe = pd.DataFrame(datos_informe)
             
-            # === AQUÍ ESTÁ EL CAMBIO DE ORDEN: ISIN A LA SEGUNDA POSICIÓN ===
             columnas_ordenadas = ["Fecha Abono", "ISIN", "Concepto", "Importe Neto (€)", "Retención en origen (€)", 
                                   "% retención en origen", "Retención en destino (€)", "% retención en destino", 
                                   "Importe Bruto (€)", "Empresa", "Cuenta de Valores", "Número de títulos", 
-                                  "Importe por título (€)", "Cuenta Abono"]
+                                  "Importe por título (€)", "Cuenta Abono", "Retención Recuperable (Max 15%) (€)"]
             df_informe = df_informe[columnas_ordenadas]
             
             st.dataframe(df_informe)
             csv_informe = df_informe.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar Excel (Con ISIN en 2ª Columna)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
+            st.download_button(label="⬇️ Descargar Excel (Con ISIN y Deducible)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
         else:
             st.info("No se han detectado datos de dividendos en el informe proporcionado.")
