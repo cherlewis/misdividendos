@@ -335,7 +335,7 @@ elif opcion == "🗂️ Renombrador de PDFs":
 # ==========================================
 elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
     st.title("📄 Extractor Total del Informe Fiscal")
-    st.write("Sube tu **Informe Fiscal Anual de ING** en PDF para extraer de golpe **todos los Dividendos en efectivo** y los **DRIPs (acciones)**.")
+    st.write("Sube tu **Informe Fiscal Anual de ING** en PDF para extraer de golpe **todos los Dividendos** y **DRIPs** con su ISIN.")
 
     archivos_pdf_inf = st.file_uploader("Sube tu PDF de Datos Fiscales aquí", type=["pdf"], accept_multiple_files=True, key="inf")
 
@@ -360,11 +360,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                     if texto_completo:
                         lineas = texto_completo.split('\n')
                         
-                        # Escáner 1: Para los DRIPs (Stock Dividends)
                         patron_drip = r"(.*?)\s+(Nacional|Internacional)\s+(\d{2}/\d{2}/\d{4})\s+STOCK DIVIDEND\s+(\d+)\s+([\d.,]+)\s*€"
-                        
-                        # Escáner 2: Para los Dividendos Ordinarios (Nacionales e Internacionales)
-                        # Grupo 1: Empresa, Grupo 2: Mercado, Grupo 3: Bruto, Grupo 4: Ret 1, Grupo 5: Ret 2 (Opcional)
                         patron_div = r"(.*?)\s+(Nacional|Internacional)\s+DIVIDENDO\s+([\d,.]+)\s*€\s+([\d,.]+)\s*€(?:\s+([\d,.]+)\s*€)?"
                         
                         for idx, linea in enumerate(lineas):
@@ -379,7 +375,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                 importe = match_drip.group(5).strip()
                                 
                                 empresa_full = empresa_part1
-                                isin_encontrado = "No encontrado"
+                                isin_encontrado = "ISIN no encontrado"
                                 
                                 for j in range(1, 4):
                                     if idx + j >= len(lineas): break
@@ -401,6 +397,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                 datos_informe.append({
                                     "Fecha Abono": fecha,
                                     "Concepto": f"STOCK DIVIDENDO ({empresa_full})",
+                                    "ISIN": isin_encontrado,  # <--- NUEVA COLUMNA ISIN
                                     "Importe Neto (€)": importe,
                                     "Retención en origen (€)": "0,00",
                                     "% retención en origen": "0%",
@@ -413,7 +410,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                     "Importe por título (€)": imp_titulo,
                                     "Cuenta Abono": "N/A"
                                 })
-                                continue # Pasamos a la siguiente línea del PDF
+                                continue
                             
                             # === EXTRACCIÓN DE DIVIDENDOS ORDINARIOS ===
                             match_div = re.search(patron_div, linea)
@@ -427,26 +424,23 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                     ret_destino = match_div.group(4).strip()
                                 else:
                                     ret_origen = match_div.group(4).strip()
-                                    # La retención destino en internacionales puede no estar en la misma línea, pero si está, la cogemos
                                     ret_destino = match_div.group(5).strip() if match_div.group(5) else "0,00"
                                 
-                                # Limpiamos el nombre de la empresa y extraemos el ISIN si viene pegado (Ej: "EBRO FOODS (ES0112...)")
+                                isin_encontrado = "ISIN no encontrado"
                                 match_isin = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)", empresa_raw)
                                 if match_isin:
-                                    isin = match_isin.group(1)
-                                    empresa_full = empresa_raw.replace(f"({isin})", "").strip()
+                                    isin_encontrado = match_isin.group(1)
+                                    empresa_full = empresa_raw.replace(f"({isin_encontrado})", "").strip()
                                 else:
                                     empresa_full = empresa_raw
-                                    # Si no está en esta línea, miramos en las dos siguientes
                                     for j in range(1, 3):
                                         if idx + j < len(lineas):
                                             linea_siguiente = lineas[idx + j].strip()
                                             match_isin_next = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)", linea_siguiente)
                                             if match_isin_next:
-                                                isin = match_isin_next.group(1)
+                                                isin_encontrado = match_isin_next.group(1)
                                                 break
 
-                                # Cálculo matemático del Neto
                                 bruto_num = euro_a_numero(bruto)
                                 ret_o_num = euro_a_numero(ret_origen)
                                 ret_d_num = euro_a_numero(ret_destino)
@@ -456,12 +450,12 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                 pct_origen = calcular_porcentaje(ret_origen, bruto)
                                 pct_destino = calcular_porcentaje(ret_destino, bruto)
                                 
-                                # Extraemos el año del nombre del informe (o fijamos 2024 temporalmente)
                                 anio_informe = "Resumen 2024"
 
                                 datos_informe.append({
                                     "Fecha Abono": anio_informe,
                                     "Concepto": f"DIVIDENDO ({empresa_full})",
+                                    "ISIN": isin_encontrado,  # <--- NUEVA COLUMNA ISIN
                                     "Importe Neto (€)": neto,
                                     "Retención en origen (€)": ret_origen,
                                     "% retención en origen": pct_origen,
@@ -487,8 +481,15 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
             st.success(f"¡Magia! Se extrajeron {len(datos_informe)} operaciones del informe fiscal (Dividendos y DRIPs).")
             df_informe = pd.DataFrame(datos_informe)
             
+            # Reordenamos las columnas para que el ISIN quede bonito al principio, después del Concepto
+            columnas_ordenadas = ["Fecha Abono", "Concepto", "ISIN", "Importe Neto (€)", "Retención en origen (€)", 
+                                  "% retención en origen", "Retención en destino (€)", "% retención en destino", 
+                                  "Importe Bruto (€)", "Empresa", "Cuenta de Valores", "Número de títulos", 
+                                  "Importe por título (€)", "Cuenta Abono"]
+            df_informe = df_informe[columnas_ordenadas]
+            
             st.dataframe(df_informe)
             csv_informe = df_informe.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar Excel (Formato Unificado)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
+            st.download_button(label="⬇️ Descargar Excel (Con ISIN)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
         else:
             st.info("No se han detectado datos de dividendos en el informe proporcionado.")
