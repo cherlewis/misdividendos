@@ -35,14 +35,33 @@ def calcular_porcentaje(parte_str, total_str):
     except:
         return "0%"
 
-def euro_a_numero(euro_str):
+def euro_a_numero(val):
     try:
-        limpio = re.sub(r'[^\d,.-]', '', str(euro_str))
+        if pd.isna(val): return 0.0
+        # Si ya es un número (como los del archivo de Hacienda), lo dejamos tal cual
+        if isinstance(val, (int, float)): return float(val)
+        
+        # Si es texto (como nuestro CSV de ING), lo limpiamos
+        limpio = re.sub(r'[^\d,.-]', '', str(val))
         if not limpio: return 0.0
-        return float(limpio.replace('.', '').replace(',', '.'))
+        
+        # Inteligencia para detectar el formato correcto:
+        if ',' in limpio and '.' in limpio:
+            if limpio.rfind(',') > limpio.rfind('.'):
+                # Formato español (ej. 1.234,56)
+                limpio = limpio.replace('.', '').replace(',', '.')
+            else:
+                # Formato americano (ej. 1,234.56)
+                limpio = limpio.replace(',', '')
+        elif ',' in limpio:
+            # Formato español sin miles (ej. 15,25)
+            limpio = limpio.replace(',', '.')
+        # Si solo tiene punto (ej. 15.25), Python ya lo entiende como americano, lo dejamos.
+        
+        return float(limpio)
     except:
         return 0.0
-
+        
 def formatear_moneda(numero):
     return f"{numero:,.2f} €".replace(',', 'X').replace('.', ',').replace('X', '.')
 
