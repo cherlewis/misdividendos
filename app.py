@@ -582,34 +582,38 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                     with pdfplumber.open(archivo) as pdf:
                         texto = pdf.pages[0].extract_text(layout=True)
                         if not texto: texto = pdf.pages[0].extract_text()
+                        
                         if texto:
-                            patron_int = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})"
-                            patron_nac = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})"
+                            # Patrón flexible: Funciona con PDFs antiguos (2022) y nuevos (2025)
+                            patron_basico = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)"
+                            match_basico = re.search(patron_basico, texto)
                             
-                            match_op = re.search(patron_int, texto) if re.search(patron_int, texto) else re.search(patron_nac, texto)
-                            
-                            # Para buscar el "Importe Total" al final de la línea buscamos el último importe
-                            # Usamos la lógica de la App 2
-                            patron_linea_completa = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta).*?([\d,]+\s+[A-Z]{3})\s*$"
-                            match_linea = re.search(patron_linea_completa, texto, re.MULTILINE)
-
                             patron_fecha = r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})"
                             match_fecha = re.search(patron_fecha, texto)
 
-                            if match_linea:
-                                tipo_op = match_linea.group(5).strip().capitalize()
-                                empresa = match_linea.group(2).strip()
-                                isin = match_linea.group(3).strip()
-                                titulos = match_linea.group(1).strip()
-                                importe_total = match_linea.group(6).strip()
+                            if match_basico:
+                                titulos = match_basico.group(1).strip()
+                                empresa = match_basico.group(2).strip()
+                                isin = match_basico.group(3).strip()
+                                tipo_op = match_basico.group(5).strip().capitalize()
                                 fecha = match_fecha.group(1).strip() if match_fecha else "Desconocida"
+                                
+                                # Buscamos el Importe Total (la última cifra de la fila de la operación)
+                                importe_total = "0,00"
+                                for linea in texto.split('\n'):
+                                    if isin in linea and tipo_op in linea:
+                                        # Busca números con decimales (,XX) seguidos o no de EUR
+                                        importes = re.findall(r"[\d\.]+,[\d]{2}(?:\s+[A-Z]{3})?", linea)
+                                        if importes:
+                                            importe_total = importes[-1].strip() # El último siempre es el coste/importe total
+                                        break
                                 
                                 operaciones.append({
                                     "Tipo": tipo_op, "Empresa": empresa, "ISIN": isin, 
                                     "Fecha": fecha, "Títulos": titulos, "Importe Total": importe_total
                                 })
                 except Exception as e:
-                    st.error(f"Error procesando {archivo.name}")
+                    st.error(f"Error procesando {archivo.name}: {e}")
             
             compra = next((op for op in operaciones if op['Tipo'] == 'Compra'), None)
             venta = next((op for op in operaciones if op['Tipo'] == 'Venta'), None)
@@ -634,6 +638,6 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                         st.error(f"**📉 PÉRDIDA (Minusvalía)**\n\nA compensar en Hacienda:\n\n## {formatear_moneda(plusvalia)}")
                 
                 st.markdown("---")
-                st.markdown("💡 **Tip Fiscal:** Los importes totales de ING ya tienen sumadas y restadas las comisiones. Puedes copiar estos valores directamente en la casilla correspondiente a la *Transmisión de acciones negociadas* de tu Renta.")
+                st.markdown("💡 **Tip Fiscal:** Los importes totales de ING ya tienen sumadas y restadas las comisiones. Copia directamente el **Valor de Adquisición** y el **Valor de Transmisión** en la casilla correspondiente de tu Renta.")
             else:
                 st.error("❌ No se ha detectado claramente 1 archivo de 'Compra' y 1 archivo de 'Venta'. Revisa los PDFs.")
