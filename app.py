@@ -6,7 +6,6 @@ import io
 import zipfile
 import gc  
 from datetime import datetime
-import numpy as np
 
 st.set_page_config(page_title="Centro Financiero ING", layout="wide")
 
@@ -72,7 +71,8 @@ opcion = st.sidebar.radio(
         "🛒 Compras/Ventas a Excel", 
         "🗂️ Renombrador de PDFs",
         "📄 Informe Fiscal (Div. y DRIPs)",
-        "⚖️ Auditoría Hacienda vs ING"
+        "⚖️ Auditoría Hacienda vs ING",
+        "📉 Calculadora Plusvalías (Hacienda)"
     ]
 )
 
@@ -230,17 +230,11 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                             titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, importe_total = datos
                             comision_cambio = "0,00 EUR"
                         else:
-                            titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, comision_cambio, importe_total = ["Revisar Manualmente"] * 12
+                            continue
                             
-                        if match_fecha:
-                            fecha_ejecucion = match_fecha.group(2).strip()[:10] 
-                            tipo_orden = match_fecha.group(4).strip()
-                            cambio_divisa = match_fecha.group(7).strip() if match_fecha.group(7) else "1,000 EUR"
-                        else:
-                            fechas = re.findall(r"\d{2}/\d{2}/\d{4}", texto)
-                            fecha_ejecucion = fechas[0] if fechas else "No encontrada"
-                            tipo_orden = "Desconocido"
-                            cambio_divisa = "Revisar"
+                        fecha_ejecucion = match_fecha.group(2).strip()[:10] if match_fecha else "No encontrada"
+                        tipo_orden = match_fecha.group(4).strip() if match_fecha else "Desconocido"
+                        cambio_divisa = (match_fecha.group(7).strip() if match_fecha.group(7) else "1,000 EUR") if match_fecha else "Revisar"
 
                         datos_operaciones.append({
                             "Fecha": fecha_ejecucion, "Operación": tipo_op, "Tipo Orden": tipo_orden, 
@@ -271,7 +265,6 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                 fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
             
             df_op = pd.concat([df_op, pd.DataFrame([fila_totales])], ignore_index=True)
-            
             st.dataframe(df_op)
             csv_op = df_op.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel", data=csv_op, file_name='operaciones_bolsa.csv', mime='text/csv')
@@ -369,7 +362,6 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                         patron_div = r"(.*?)\s+(Nacional|Internacional)\s+DIVIDENDO\s+([\d,.]+)\s*€\s+([\d,.]+)\s*€(?:\s+([\d,.]+)\s*€)?"
                         
                         for idx, linea in enumerate(lineas):
-                            # === EXTRACCIÓN DE DRIPS ===
                             match_drip = re.search(patron_drip, linea)
                             if match_drip:
                                 empresa_part1 = match_drip.group(1).strip()
@@ -399,8 +391,8 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
 
                                 datos_informe.append({
                                     "Fecha Abono": fecha,
-                                    "Concepto": f"STOCK DIVIDENDO ({empresa_full})",
                                     "ISIN": isin_encontrado, 
+                                    "Concepto": f"STOCK DIVIDENDO ({empresa_full})",
                                     "Importe Neto (€)": importe,
                                     "Retención en origen (€)": "0,00",
                                     "% retención en origen": "0%",
@@ -416,7 +408,6 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                 })
                                 continue
                             
-                            # === EXTRACCIÓN DE DIVIDENDOS ORDINARIOS ===
                             match_div = re.search(patron_div, linea)
                             if match_div:
                                 empresa_raw = match_div.group(1).strip()
@@ -456,8 +447,8 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
 
                                 datos_informe.append({
                                     "Fecha Abono": "Resumen 2024",
-                                    "Concepto": f"DIVIDENDO ({empresa_full})",
                                     "ISIN": isin_encontrado, 
+                                    "Concepto": f"DIVIDENDO ({empresa_full})",
                                     "Importe Neto (€)": formato_numero_tabla(neto_num),
                                     "Retención en origen (€)": ret_origen,
                                     "% retención en origen": pct_origen,
@@ -471,7 +462,6 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                     "Cuenta Abono": "N/A",
                                     "Retención Recuperable (Max 15%) (€)": ret_recuperable
                                 })
-
             except Exception as e:
                 st.warning(f"⚠️ Error al leer '{archivo.name}'. Se ha omitido.")
             
@@ -498,7 +488,6 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                 fila_totales[col] = formato_numero_tabla(suma)
             
             df_informe = pd.concat([df_informe, pd.DataFrame([fila_totales])], ignore_index=True)
-            
             st.dataframe(df_informe)
             csv_informe = df_informe.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel (Con Totales)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
@@ -508,11 +497,9 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
 # ==========================================
 elif opcion == "⚖️ Auditoría Hacienda vs ING":
     st.title("⚖️ Auditor Automático: Hacienda vs ING")
-    st.markdown("""
-    **¡Prepárate para la Declaración de la Renta!**
-    Sube aquí tu Excel generado por la App 4 (Informe Fiscal ING) y el archivo de datos que te descargues de la web de la AEAT (Hacienda) cuando abran la campaña. 
-    El sistema cruzará los ISIN para avisarte si a Hacienda se le ha olvidado algún pago extranjero o si los importes varían.
-    """)
+    st.markdown("""**¡Prepárate para la Declaración de la Renta!**
+    Sube aquí tu Excel generado por la App 4 (Informe Fiscal ING) y el archivo de datos que te descargues de la web de la AEAT. 
+    El sistema cruzará los ISIN para avisarte si a Hacienda se le ha olvidado algún pago.""")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -524,18 +511,15 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
 
     if archivo_ing and archivo_aeat:
         try:
-            # 1. Leemos el archivo de ING
             df_ing = pd.read_csv(archivo_ing, sep=";")
             df_ing = df_ing[df_ing["ISIN"] != "ISIN no encontrado"]
-            df_ing = df_ing[df_ing["Fecha Abono"] != "TOTALES"] # Quitamos la fila de totales para no duplicar
+            df_ing = df_ing[df_ing["Fecha Abono"] != "TOTALES"] 
 
-            # 2. Leemos el archivo de la AEAT (Soporta Excel o CSV)
             if archivo_aeat.name.endswith('.csv'):
                 df_aeat = pd.read_csv(archivo_aeat, sep=None, engine='python')
             else:
                 df_aeat = pd.read_excel(archivo_aeat)
 
-            # 3. Mapeo dinámico: Le pedimos al usuario que nos diga cómo se llaman las columnas en el archivo de la AEAT de este año
             st.markdown("---")
             st.markdown("### ⚙️ Configuración de Columnas de Hacienda")
             st.write("Selecciona qué columna del archivo de Hacienda corresponde a cada dato:")
@@ -547,24 +531,18 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
                 col_bruto_aeat = st.selectbox("Columna del Rendimiento Bruto (€):", df_aeat.columns)
 
             if st.button("🚀 Cruzar Datos y Auditar"):
-                # Agrupamos los de ING por ISIN sumando el bruto
                 df_ing['Bruto_Num_ING'] = df_ing['Importe Bruto (€)'].apply(euro_a_numero)
                 ing_agrupado = df_ing.groupby('ISIN')['Bruto_Num_ING'].sum().reset_index()
 
-                # Agrupamos los de AEAT por ISIN sumando el bruto
                 df_aeat['Bruto_Num_AEAT'] = df_aeat[col_bruto_aeat].apply(euro_a_numero)
                 aeat_agrupado = df_aeat.groupby(col_isin_aeat)['Bruto_Num_AEAT'].sum().reset_index()
                 aeat_agrupado = aeat_agrupado.rename(columns={col_isin_aeat: 'ISIN'})
 
-                # Cruzamos ambas tablas
                 df_cruce = pd.merge(ing_agrupado, aeat_agrupado, on='ISIN', how='outer')
                 df_cruce['Bruto_Num_ING'] = df_cruce['Bruto_Num_ING'].fillna(0)
                 df_cruce['Bruto_Num_AEAT'] = df_cruce['Bruto_Num_AEAT'].fillna(0)
-                
-                # Calculamos diferencias
                 df_cruce['Diferencia (€)'] = df_cruce['Bruto_Num_ING'] - df_cruce['Bruto_Num_AEAT']
 
-                # Ponemos el semáforo
                 def estado_auditoria(dif, ing, aeat):
                     if ing > 0 and aeat == 0: return "🔴 Falta en Hacienda (¡Añádelo!)"
                     elif aeat > 0 and ing == 0: return "⚠️ Está en Hacienda pero no en ING"
@@ -573,7 +551,6 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
 
                 df_cruce['Estado'] = df_cruce.apply(lambda row: estado_auditoria(row['Diferencia (€)'], row['Bruto_Num_ING'], row['Bruto_Num_AEAT']), axis=1)
 
-                # Formateo visual
                 df_cruce['Bruto ING (€)'] = df_cruce['Bruto_Num_ING'].apply(formato_numero_tabla)
                 df_cruce['Bruto Hacienda (€)'] = df_cruce['Bruto_Num_AEAT'].apply(formato_numero_tabla)
                 df_cruce['Diferencia (€)'] = df_cruce['Diferencia (€)'].apply(formato_numero_tabla)
@@ -581,7 +558,82 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
                 df_final = df_cruce[['ISIN', 'Bruto ING (€)', 'Bruto Hacienda (€)', 'Diferencia (€)', 'Estado']]
 
                 st.markdown("### 📊 Resultado de la Auditoría")
-                st.dataframe(df_final.style.applymap(lambda x: 'background-color: #d4edda' if '🟢' in x else ('background-color: #f8d7da' if '🔴' in x else ('background-color: #fff3cd' if '🟡' or '⚠️' in x else '')), subset=['Estado']))
+                st.dataframe(df_final.style.applymap(lambda x: 'background-color: #d4edda' if '🟢' in str(x) else ('background-color: #f8d7da' if '🔴' in str(x) else ('background-color: #fff3cd' if '🟡' in str(x) or '⚠️' in str(x) else '')), subset=['Estado']))
                 
         except Exception as e:
             st.error(f"Error al procesar los archivos. Asegúrate de que el formato es correcto. Detalles: {e}")
+
+# ==========================================
+# 🚀 APLICACIÓN 6: CALCULADORA DE PLUSVALÍAS
+# ==========================================
+elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
+    st.title("📉 Calculadora de Plusvalías (Valor de Adquisición y Transmisión)")
+    st.markdown("Sube **exactamente 2 PDFs**: el justificante de la **Compra** y el de la **Venta**. El sistema calculará el resultado neto a declarar en Hacienda.")
+
+    archivos_cv = st.file_uploader("Sube tus 2 PDFs (Compra y Venta) aquí", type=["pdf"], accept_multiple_files=True, key="cv")
+
+    if archivos_cv:
+        if len(archivos_cv) != 2:
+            st.warning("⚠️ Por favor, sube exactamente 2 archivos (uno de compra y uno de venta) para poder hacer el cálculo.")
+        else:
+            operaciones = []
+            for archivo in archivos_cv:
+                try:
+                    with pdfplumber.open(archivo) as pdf:
+                        texto = pdf.pages[0].extract_text(layout=True)
+                        if not texto: texto = pdf.pages[0].extract_text()
+                        if texto:
+                            patron_int = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})"
+                            patron_nac = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})"
+                            
+                            match_op = re.search(patron_int, texto) if re.search(patron_int, texto) else re.search(patron_nac, texto)
+                            
+                            # Para buscar el "Importe Total" al final de la línea buscamos el último importe
+                            # Usamos la lógica de la App 2
+                            patron_linea_completa = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta).*?([\d,]+\s+[A-Z]{3})\s*$"
+                            match_linea = re.search(patron_linea_completa, texto, re.MULTILINE)
+
+                            patron_fecha = r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})"
+                            match_fecha = re.search(patron_fecha, texto)
+
+                            if match_linea:
+                                tipo_op = match_linea.group(5).strip().capitalize()
+                                empresa = match_linea.group(2).strip()
+                                isin = match_linea.group(3).strip()
+                                titulos = match_linea.group(1).strip()
+                                importe_total = match_linea.group(6).strip()
+                                fecha = match_fecha.group(1).strip() if match_fecha else "Desconocida"
+                                
+                                operaciones.append({
+                                    "Tipo": tipo_op, "Empresa": empresa, "ISIN": isin, 
+                                    "Fecha": fecha, "Títulos": titulos, "Importe Total": importe_total
+                                })
+                except Exception as e:
+                    st.error(f"Error procesando {archivo.name}")
+            
+            compra = next((op for op in operaciones if op['Tipo'] == 'Compra'), None)
+            venta = next((op for op in operaciones if op['Tipo'] == 'Venta'), None)
+
+            if compra and venta:
+                val_adquisicion = euro_a_numero(compra['Importe Total'])
+                val_transmision = euro_a_numero(venta['Importe Total'])
+                plusvalia = val_transmision - val_adquisicion
+                
+                st.markdown("---")
+                st.subheader(f"📊 Resultado Fiscal: {compra['Empresa']} ({compra['ISIN']})")
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.info(f"**🛒 COMPRA (Valor de Adquisición)**\n\nFecha: {compra['Fecha']}\n\nTítulos: {compra['Títulos']}\n\n**Total: {formatear_moneda(val_adquisicion)}**")
+                with col2:
+                    st.success(f"**💰 VENTA (Valor de Transmisión)**\n\nFecha: {venta['Fecha']}\n\nTítulos: {venta['Títulos']}\n\n**Total: {formatear_moneda(val_transmision)}**")
+                with col3:
+                    if plusvalia > 0:
+                        st.success(f"**📈 GANANCIA (Plusvalía)**\n\nA declarar en Hacienda:\n\n## + {formatear_moneda(plusvalia)}")
+                    else:
+                        st.error(f"**📉 PÉRDIDA (Minusvalía)**\n\nA compensar en Hacienda:\n\n## {formatear_moneda(plusvalia)}")
+                
+                st.markdown("---")
+                st.markdown("💡 **Tip Fiscal:** Los importes totales de ING ya tienen sumadas y restadas las comisiones. Puedes copiar estos valores directamente en la casilla correspondiente a la *Transmisión de acciones negociadas* de tu Renta.")
+            else:
+                st.error("❌ No se ha detectado claramente 1 archivo de 'Compra' y 1 archivo de 'Venta'. Revisa los PDFs.")
