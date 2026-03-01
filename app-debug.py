@@ -566,6 +566,8 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
         except Exception as e:
             st.error(f"Error al procesar los archivos. Asegúrate de que el formato es correcto. Detalles: {e}")
 
+
+
 # ==========================================
 # 🚀 APLICACIÓN 6: CALCULADORA DE PLUSVALÍAS
 # ==========================================
@@ -587,23 +589,38 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                         texto_normal = pdf.pages[0].extract_text() or ""
                         texto_limpio = re.sub(r'\s+', ' ', texto_layout + " " + texto_normal)
                         
-                        # 1. Encontrar Tipo de Operación y zona de números aplastando el texto
-                        patron_bloque = r'\b(Compra|Venta)\b(.*?)(?:Detalle de la orden|Cuenta de cargo|Podrá solicitar)'
-                        match_op = re.search(patron_bloque, texto_limpio, re.IGNORECASE)
-                        
+                        # 1. Encontrar Tipo de Operación y los números
                         tipo_op = "Desconocido"
-                        importes = []
+                        importe_total = "0,00"
+                        titulos = "0"
                         
-                        if match_op:
-                            tipo_op = match_op.group(1).capitalize()
-                            zona_numeros = match_op.group(2)
-                            importes = re.findall(r'\b\d{1,3}(?:\.\d{3})*,\d{2}\b', zona_numeros)
-                        else:
-                            match_tipo = re.search(r'\b(Compra|Venta)\b', texto_limpio, re.IGNORECASE)
-                            if match_tipo: tipo_op = match_tipo.group(1).capitalize()
-                            importes = re.findall(r'\b\d{1,3}(?:\.\d{3})*,\d{2}\b', texto_limpio)
+                        # TRUCO MAESTRO: Buscamos "Compra" o "Venta" que vaya seguido inmediatamente de un número.
+                        # Esto evita que se atasque en la cabecera que dice "Comisión compra / venta"
+                        match_tipo = re.search(r'\b(Compra|Venta)\b\s+(?=\d)', texto_limpio, re.IGNORECASE)
+                        
+                        if match_tipo:
+                            tipo_op = match_tipo.group(1).capitalize()
+                            idx = match_tipo.end()
+                            
+                            # Tomamos los siguientes 300 caracteres justo donde empiezan los precios
+                            zona_cruda = texto_limpio[idx:idx+300]
+                            
+                            # Cortamos la lectura en cuanto aparezca un IBAN, una fecha, o palabras clave
+                            zona_numeros = re.split(r'(?:ES\d{10}|\b\d{2}/\d{2}/\d{4}\b|Cuenta|Detalle|Limitada)', zona_cruda, flags=re.IGNORECASE)[0]
+                            
+                            # Extraemos la secuencia limpia de precios
+                            importes = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', zona_numeros)
+                            
+                            if len(importes) >= 2:
+                                precio_ud = euro_a_numero(importes[0])
+                                efectivo = euro_a_numero(importes[1])
+                                importe_total = importes[-1] # El último número de la lista siempre es el Coste Total
+                                
+                                # Cálculo matemático de títulos (Efectivo / Precio)
+                                if precio_ud > 0:
+                                    titulos = str(int(round(efectivo / precio_ud)))
 
-                        # 2. Encontrar ISIN (Ignoramos las 'XXX')
+                        # 2. Encontrar ISIN (Ignorando las 'XXX' de los PDFs antiguos)
                         isins = re.findall(r'\b[A-Z]{2}[A-Z0-9]{10}\b', texto_limpio)
                         isin = "Desconocido"
                         for i in isins:
@@ -615,18 +632,6 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                         fechas = re.findall(r'\b\d{2}/\d{2}/\d{4}\b', texto_limpio)
                         fecha = fechas[0] if fechas else "Desconocida"
                         
-                        # 4. Cálculo Matemático de Títulos
-                        titulos = "0"
-                        importe_total = "0,00"
-                        
-                        if len(importes) >= 2:
-                            precio_ud = euro_a_numero(importes[0])
-                            efectivo = euro_a_numero(importes[1])
-                            importe_total = importes[-1]
-                            
-                            if precio_ud > 0:
-                                titulos = str(int(round(efectivo / precio_ud)))
-                                
                         operaciones.append({
                             "Tipo": tipo_op, 
                             "ISIN": isin, 
@@ -662,4 +667,4 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                 st.markdown("---")
                 st.markdown("💡 **Tip Fiscal:** Copia directamente el **Valor de Adquisición** y el **Valor de Transmisión** en la casilla de *Transmisión de acciones negociadas* de Renta Web. Las comisiones de ING ya están sumadas en la compra y restadas en la venta.")
             else:
-                st.error(f"❌ No se han detectado los datos de Compra y Venta. Revisa si has subido los dos documentos correctos.")
+                st.error(f"❌ Faltan datos. Operaciones detectadas:\n{operaciones}")
