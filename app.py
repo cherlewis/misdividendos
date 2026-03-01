@@ -567,6 +567,7 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
             st.error(f"Error al procesar los archivos. Asegúrate de que el formato es correcto. Detalles: {e}")
 
 
+
 # ==========================================
 # 🚀 APLICACIÓN 6: CALCULADORA DE PLUSVALÍAS
 # ==========================================
@@ -593,26 +594,29 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                         importe_total = "0,00"
                         titulos = "0"
                         
-                        match_tipo = re.search(r'\b(Compra|Venta)\b', texto_limpio, re.IGNORECASE)
+                        # TRUCO MAESTRO: Buscamos "Compra" o "Venta" que vaya seguido inmediatamente de un número.
+                        # Esto evita que se atasque en la cabecera que dice "Comisión compra / venta"
+                        match_tipo = re.search(r'\b(Compra|Venta)\b\s+(?=\d)', texto_limpio, re.IGNORECASE)
+                        
                         if match_tipo:
                             tipo_op = match_tipo.group(1).capitalize()
                             idx = match_tipo.end()
                             
-                            # Tomamos los siguientes 300 caracteres justo después de la palabra "Compra" o "Venta"
+                            # Tomamos los siguientes 300 caracteres justo donde empiezan los precios
                             zona_cruda = texto_limpio[idx:idx+300]
                             
                             # Cortamos la lectura en cuanto aparezca un IBAN, una fecha, o palabras clave
                             zona_numeros = re.split(r'(?:ES\d{10}|\b\d{2}/\d{2}/\d{4}\b|Cuenta|Detalle|Limitada)', zona_cruda, flags=re.IGNORECASE)[0]
                             
                             # Extraemos la secuencia limpia de precios
-                            importes = re.findall(r'\b\d{1,3}(?:\.\d{3})*,\d{2}\b', zona_numeros)
+                            importes = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', zona_numeros)
                             
                             if len(importes) >= 2:
                                 precio_ud = euro_a_numero(importes[0])
                                 efectivo = euro_a_numero(importes[1])
-                                importe_total = importes[-1]
+                                importe_total = importes[-1] # El último número de la lista siempre es el Coste Total
                                 
-                                # Tu cálculo matemático infalible de títulos (Efectivo / Precio)
+                                # Cálculo matemático de títulos (Efectivo / Precio)
                                 if precio_ud > 0:
                                     titulos = str(int(round(efectivo / precio_ud)))
 
