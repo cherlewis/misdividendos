@@ -580,38 +580,51 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
             for archivo in archivos_cv:
                 try:
                     with pdfplumber.open(archivo) as pdf:
-                        texto = pdf.pages[0].extract_text(layout=True)
-                        if not texto: texto = pdf.pages[0].extract_text()
+                        texto_layout = pdf.pages[0].extract_text(layout=True) or ""
+                        texto_normal = pdf.pages[0].extract_text() or ""
                         
-                        if texto:
-                            # Patrón flexible: Funciona con PDFs antiguos (2022) y nuevos (2025)
-                            patron_basico = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)"
-                            match_basico = re.search(patron_basico, texto)
+                        texto_combinado = texto_normal + "\n" + texto_layout
+                        
+                        # 1. Encontrar Tipo de Operación
+                        match_tipo = re.search(r'\b(Compra|Venta)\b', texto_combinado, re.IGNORECASE)
+                        if not match_tipo: continue
+                        tipo_op = match_tipo.group(1).capitalize()
+                        
+                        # 2. Encontrar ISIN
+                        match_isin = re.search(r'([A-Z]{2}[A-Z0-9]{10})', texto_combinado)
+                        isin = match_isin.group(1) if match_isin else "Desconocido"
+                        
+                        # 3. Encontrar Fecha
+                        match_fecha = re.search(r'(\d{2}/\d{2}/\d{4})', texto_combinado)
+                        fecha = match_fecha.group(1) if match_fecha else "Desconocida"
+                        
+                        # 4. Encontrar la línea exacta de la operación (modo rastreador infalible)
+                        linea_objetivo = ""
+                        for linea in texto_normal.split('\n'):
+                            if isin.lower() in linea.lower() and tipo_op.lower() in linea.lower():
+                                linea_objetivo = linea
+                                break
+                        
+                        if not linea_objetivo:
+                            for linea in texto_layout.split('\n'):
+                                if isin.lower() in linea.lower() and tipo_op.lower() in linea.lower():
+                                    linea_objetivo = linea
+                                    break
+                        
+                        importe_total = "0,00"
+                        
+                        if linea_objetivo:
+                            # Busca todos los números con coma decimal (Ej: 1.113,02 o 49,75)
+                            importes = re.findall(r'(\d{1,3}(?:\.\d{3})*,\d{2})', linea_objetivo)
+                            if importes:
+                                importe_total = importes[-1] # El último importe siempre es el Coste/Importe Total
                             
-                            patron_fecha = r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})"
-                            match_fecha = re.search(patron_fecha, texto)
-
-                            if match_basico:
-                                titulos = match_basico.group(1).strip()
-                                empresa = match_basico.group(2).strip()
-                                isin = match_basico.group(3).strip()
-                                tipo_op = match_basico.group(5).strip().capitalize()
-                                fecha = match_fecha.group(1).strip() if match_fecha else "Desconocida"
-                                
-                                # Buscamos el Importe Total (la última cifra de la fila de la operación)
-                                importe_total = "0,00"
-                                for linea in texto.split('\n'):
-                                    if isin in linea and tipo_op in linea:
-                                        # Busca números con decimales (,XX) seguidos o no de EUR
-                                        importes = re.findall(r"[\d\.]+,[\d]{2}(?:\s+[A-Z]{3})?", linea)
-                                        if importes:
-                                            importe_total = importes[-1].strip() # El último siempre es el coste/importe total
-                                        break
-                                
-                                operaciones.append({
-                                    "Tipo": tipo_op, "Empresa": empresa, "ISIN": isin, 
-                                    "Fecha": fecha, "Títulos": titulos, "Importe Total": importe_total
-                                })
+                        operaciones.append({
+                            "Tipo": tipo_op, 
+                            "ISIN": isin, 
+                            "Fecha": fecha, 
+                            "Importe Total": importe_total
+                        })
                 except Exception as e:
                     st.error(f"Error procesando {archivo.name}: {e}")
             
@@ -624,13 +637,13 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                 plusvalia = val_transmision - val_adquisicion
                 
                 st.markdown("---")
-                st.subheader(f"📊 Resultado Fiscal: {compra['Empresa']} ({compra['ISIN']})")
+                st.subheader(f"📊 Resultado Fiscal: Acciones de {compra['ISIN']}")
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.info(f"**🛒 COMPRA (Valor de Adquisición)**\n\nFecha: {compra['Fecha']}\n\nTítulos: {compra['Títulos']}\n\n**Total: {formatear_moneda(val_adquisicion)}**")
+                    st.info(f"**🛒 COMPRA (Valor Adquisición)**\n\nFecha: {compra['Fecha']}\n\n**Total: {formatear_moneda(val_adquisicion)}**")
                 with col2:
-                    st.success(f"**💰 VENTA (Valor de Transmisión)**\n\nFecha: {venta['Fecha']}\n\nTítulos: {venta['Títulos']}\n\n**Total: {formatear_moneda(val_transmision)}**")
+                    st.success(f"**💰 VENTA (Valor Transmisión)**\n\nFecha: {venta['Fecha']}\n\n**Total: {formatear_moneda(val_transmision)}**")
                 with col3:
                     if plusvalia > 0:
                         st.success(f"**📈 GANANCIA (Plusvalía)**\n\nA declarar en Hacienda:\n\n## + {formatear_moneda(plusvalia)}")
@@ -638,6 +651,6 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                         st.error(f"**📉 PÉRDIDA (Minusvalía)**\n\nA compensar en Hacienda:\n\n## {formatear_moneda(plusvalia)}")
                 
                 st.markdown("---")
-                st.markdown("💡 **Tip Fiscal:** Los importes totales de ING ya tienen sumadas y restadas las comisiones. Copia directamente el **Valor de Adquisición** y el **Valor de Transmisión** en la casilla correspondiente de tu Renta.")
+                st.markdown("💡 **Tip Fiscal:** Copia directamente el **Valor de Adquisición** y el **Valor de Transmisión** en la casilla de *Transmisión de acciones negociadas* de Renta Web. Las comisiones de ING ya están sumadas en la compra y restadas en la venta.")
             else:
-                st.error("❌ No se ha detectado claramente 1 archivo de 'Compra' y 1 archivo de 'Venta'. Revisa los PDFs.")
+                st.error("❌ No se han detectado los datos. Revisa que haya un PDF de Compra y otro de Venta.")
