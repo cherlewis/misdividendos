@@ -1,6 +1,3 @@
-Programa Payton backup de seguridad
-
-
 import streamlit as st
 import pdfplumber
 import pandas as pd
@@ -88,6 +85,7 @@ st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
 if opcion == "📊 Dividendos a Excel":
     st.title("📊 Extractor de Dividendos y Dashboard")
     st.write("Sube tus recibos de dividendos en PDF de ING para extraer los datos y ver tu resumen.")
+
     archivos_pdf = st.file_uploader("Sube tus PDFs aquí", type=["pdf"], accept_multiple_files=True, key="div")
 
     if archivos_pdf:
@@ -120,6 +118,7 @@ if opcion == "📊 Dividendos a Excel":
                         pct_origen = calcular_porcentaje(ret_origen, bruto)
                         pct_destino = calcular_porcentaje(ret_destino, bruto)
                         ret_recuperable = calcular_retencion_recuperable(pct_origen, bruto, ret_origen)
+                        
                         cuenta_abono = buscar_dato([r"(1465\s*0100\s*93\s*\d{10})"], texto, "N/A")
                         cuenta_valores = buscar_dato([r"(91\s*\d{10})"], texto, "0")
 
@@ -180,6 +179,7 @@ if opcion == "📊 Dividendos a Excel":
             st.markdown("---")
             df = df.drop(columns=['num_bruto', 'num_neto', 'num_ret_origen', 'num_ret_destino', 'Grupo_Pais'])
             
+            # Fila de totales
             fila_totales = {col: "" for col in df.columns}
             fila_totales["Fecha Abono"] = "TOTALES"
             cols_a_sumar = ["Importe Neto (€)", "Retención en origen (€)", "Retención en destino (€)", "Importe Bruto (€)", "Retención Recuperable (Max 15%) (€)"]
@@ -495,6 +495,76 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
             csv_informe = df_informe.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel (Con Totales)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
 
+# ==========================================
+# 🚀 APLICACIÓN 5: AUDITORÍA HACIENDA VS ING
+# ==========================================
+elif opcion == "⚖️ Auditoría Hacienda vs ING":
+    st.title("⚖️ Auditor Automático: Hacienda vs ING")
+    st.markdown("""**¡Prepárate para la Declaración de la Renta!**
+    Sube aquí tu Excel generado por la App 4 (Informe Fiscal ING) y el archivo de datos que te descargues de la web de la AEAT. 
+    El sistema cruzará los ISIN para avisarte si a Hacienda se le ha olvidado algún pago.""")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("1️⃣ Sube tu Excel de ING")
+        archivo_ing = st.file_uploader("Sube el archivo CSV de ING", type=["csv"], key="ing_audit")
+    with col2:
+        st.subheader("2️⃣ Sube los Datos de Hacienda")
+        archivo_aeat = st.file_uploader("Sube el archivo Excel/CSV de la AEAT", type=["csv", "xlsx", "xls"], key="aeat_audit")
+
+    if archivo_ing and archivo_aeat:
+        try:
+            df_ing = pd.read_csv(archivo_ing, sep=";")
+            df_ing = df_ing[df_ing["ISIN"] != "ISIN no encontrado"]
+            df_ing = df_ing[df_ing["Fecha Abono"] != "TOTALES"] 
+
+            if archivo_aeat.name.endswith('.csv'):
+                df_aeat = pd.read_csv(archivo_aeat, sep=None, engine='python')
+            else:
+                df_aeat = pd.read_excel(archivo_aeat)
+
+            st.markdown("---")
+            st.markdown("### ⚙️ Configuración de Columnas de Hacienda")
+            st.write("Selecciona qué columna del archivo de Hacienda corresponde a cada dato:")
+            
+            col_sel_1, col_sel_2 = st.columns(2)
+            with col_sel_1:
+                col_isin_aeat = st.selectbox("Columna del ISIN:", df_aeat.columns)
+            with col_sel_2:
+                col_bruto_aeat = st.selectbox("Columna del Rendimiento Bruto (€):", df_aeat.columns)
+
+            if st.button("🚀 Cruzar Datos y Auditar"):
+                df_ing['Bruto_Num_ING'] = df_ing['Importe Bruto (€)'].apply(euro_a_numero)
+                ing_agrupado = df_ing.groupby('ISIN')['Bruto_Num_ING'].sum().reset_index()
+
+                df_aeat['Bruto_Num_AEAT'] = df_aeat[col_bruto_aeat].apply(euro_a_numero)
+                aeat_agrupado = df_aeat.groupby(col_isin_aeat)['Bruto_Num_AEAT'].sum().reset_index()
+                aeat_agrupado = aeat_agrupado.rename(columns={col_isin_aeat: 'ISIN'})
+
+                df_cruce = pd.merge(ing_agrupado, aeat_agrupado, on='ISIN', how='outer')
+                df_cruce['Bruto_Num_ING'] = df_cruce['Bruto_Num_ING'].fillna(0)
+                df_cruce['Bruto_Num_AEAT'] = df_cruce['Bruto_Num_AEAT'].fillna(0)
+                df_cruce['Diferencia (€)'] = df_cruce['Bruto_Num_ING'] - df_cruce['Bruto_Num_AEAT']
+
+                def estado_auditoria(dif, ing, aeat):
+                    if ing > 0 and aeat == 0: return "🔴 Falta en Hacienda (¡Añádelo!)"
+                    elif aeat > 0 and ing == 0: return "⚠️ Está en Hacienda pero no en ING"
+                    elif abs(dif) > 0.10: return "🟡 Importes no coinciden"
+                    else: return "🟢 ¡Cuadra Perfecto!"
+
+                df_cruce['Estado'] = df_cruce.apply(lambda row: estado_auditoria(row['Diferencia (€)'], row['Bruto_Num_ING'], row['Bruto_Num_AEAT']), axis=1)
+
+                df_cruce['Bruto ING (€)'] = df_cruce['Bruto_Num_ING'].apply(formato_numero_tabla)
+                df_cruce['Bruto Hacienda (€)'] = df_cruce['Bruto_Num_AEAT'].apply(formato_numero_tabla)
+                df_cruce['Diferencia (€)'] = df_cruce['Diferencia (€)'].apply(formato_numero_tabla)
+                
+                df_final = df_cruce[['ISIN', 'Bruto ING (€)', 'Bruto Hacienda (€)', 'Diferencia (€)', 'Estado']]
+
+                st.markdown("### 📊 Resultado de la Auditoría")
+                st.dataframe(df_final.style.applymap(lambda x: 'background-color: #d4edda' if '🟢' in str(x) else ('background-color: #f8d7da' if '🔴' in str(x) else ('background-color: #fff3cd' if '🟡' in str(x) or '⚠️' in str(x) else '')), subset=['Estado']))
+                
+        except Exception as e:
+            st.error(f"Error al procesar los archivos. Asegúrate de que el formato es correcto. Detalles: {e}")
 
 # ==========================================
 # 🚀 APLICACIÓN 6: CALCULADORA DE PLUSVALÍAS
@@ -517,7 +587,7 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                         texto_normal = pdf.pages[0].extract_text() or ""
                         texto_limpio = re.sub(r'\s+', ' ', texto_layout + " " + texto_normal)
                         
-                        # 1. Encontrar Tipo de Operación y zona de números
+                        # 1. Encontrar Tipo de Operación y zona de números aplastando el texto
                         patron_bloque = r'\b(Compra|Venta)\b(.*?)(?:Detalle de la orden|Cuenta de cargo|Podrá solicitar)'
                         match_op = re.search(patron_bloque, texto_limpio, re.IGNORECASE)
                         
@@ -545,7 +615,7 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                         fechas = re.findall(r'\b\d{2}/\d{2}/\d{4}\b', texto_limpio)
                         fecha = fechas[0] if fechas else "Desconocida"
                         
-                        # 4. Cálculo Matemático de Títulos (Efectivo / Precio)
+                        # 4. Cálculo Matemático de Títulos
                         titulos = "0"
                         importe_total = "0,00"
                         
@@ -554,7 +624,6 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                             efectivo = euro_a_numero(importes[1])
                             importe_total = importes[-1]
                             
-                            # Si el precio es mayor que 0, calculamos los títulos exactos
                             if precio_ud > 0:
                                 titulos = str(int(round(efectivo / precio_ud)))
                                 
@@ -593,4 +662,4 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                 st.markdown("---")
                 st.markdown("💡 **Tip Fiscal:** Copia directamente el **Valor de Adquisición** y el **Valor de Transmisión** en la casilla de *Transmisión de acciones negociadas* de Renta Web. Las comisiones de ING ya están sumadas en la compra y restadas en la venta.")
             else:
-                st.error(f"❌ No se han detectado los datos de Compra y Venta. Operaciones leídas:\n{operaciones}")
+                st.error(f"❌ No se han detectado los datos de Compra y Venta. Revisa si has subido los dos documentos correctos.")
