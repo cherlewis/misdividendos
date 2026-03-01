@@ -6,6 +6,7 @@ import io
 import zipfile
 import gc  
 from datetime import datetime
+import numpy as np
 
 st.set_page_config(page_title="Centro Financiero ING", layout="wide")
 
@@ -36,20 +37,17 @@ def calcular_porcentaje(parte_str, total_str):
         return "0%"
 
 def euro_a_numero(euro_str):
-    """Convierte texto (ej. '1.200,50 EUR' o '32,93') a número matemático puro."""
     try:
-        # Quitamos letras, símbolos del euro y espacios, dejamos solo números, comas y puntos
         limpio = re.sub(r'[^\d,.-]', '', str(euro_str))
+        if not limpio: return 0.0
         return float(limpio.replace('.', '').replace(',', '.'))
     except:
         return 0.0
 
 def formatear_moneda(numero):
-    """Formato para los KPIs visuales grandes"""
     return f"{numero:,.2f} €".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 def formato_numero_tabla(numero):
-    """Formato exacto para la tabla Excel (sin el símbolo € para que Excel pueda operar si quieres)"""
     return f"{numero:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 def calcular_retencion_recuperable(pct_str, bruto_str, ret_o_str):
@@ -73,7 +71,8 @@ opcion = st.sidebar.radio(
         "📊 Dividendos a Excel", 
         "🛒 Compras/Ventas a Excel", 
         "🗂️ Renombrador de PDFs",
-        "📄 Informe Fiscal (Div. y DRIPs)"
+        "📄 Informe Fiscal (Div. y DRIPs)",
+        "⚖️ Auditoría Hacienda vs ING"
     ]
 )
 
@@ -86,19 +85,16 @@ st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
 if opcion == "📊 Dividendos a Excel":
     st.title("📊 Extractor de Dividendos y Dashboard")
     st.write("Sube tus recibos de dividendos en PDF de ING para extraer los datos y ver tu resumen.")
-
     archivos_pdf = st.file_uploader("Sube tus PDFs aquí", type=["pdf"], accept_multiple_files=True, key="div")
 
     if archivos_pdf:
         datos_extraidos = []
         total_archivos = len(archivos_pdf)
-        
         barra_progreso = st.progress(0)
         texto_estado = st.empty()
 
         for i, archivo in enumerate(archivos_pdf):
             texto_estado.text(f"⏳ Procesando ({i+1}/{total_archivos}): {archivo.name}...")
-            
             try:
                 with pdfplumber.open(archivo) as pdf:
                     texto = pdf.pages[0].extract_text(layout=True) 
@@ -146,7 +142,6 @@ if opcion == "📊 Dividendos a Excel":
             df['Fecha_Temporal'] = pd.to_datetime(df['Fecha Abono'], format='%d/%m/%Y', errors='coerce')
             df = df.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
             
-            # --- DASHBOARD VISUAL ---
             st.markdown("---")
             st.subheader("📈 Resumen de tus Dividendos")
             df['num_bruto'] = df['Importe Bruto (€)'].apply(euro_a_numero)
@@ -180,17 +175,10 @@ if opcion == "📊 Dividendos a Excel":
                     st.write(f"🏛️ Ret. en Origen Total: **{formatear_moneda(df_grupo['num_ret_origen'].sum())}**")
                     
             st.markdown("---")
-            st.markdown("**Top Pagadores (Neto por Empresa):**")
-            st.bar_chart(df.groupby('Empresa')['num_neto'].sum().reset_index().sort_values(by='num_neto', ascending=False).set_index('Empresa'))
-            st.markdown("---")
-            
-            # Limpiamos auxiliares
             df = df.drop(columns=['num_bruto', 'num_neto', 'num_ret_origen', 'num_ret_destino', 'Grupo_Pais'])
             
-            # === NUEVO: AÑADIR FILA DE TOTALES ===
             fila_totales = {col: "" for col in df.columns}
             fila_totales["Fecha Abono"] = "TOTALES"
-            # Sumamos las columnas de importes
             cols_a_sumar = ["Importe Neto (€)", "Retención en origen (€)", "Retención en destino (€)", "Importe Bruto (€)", "Retención Recuperable (Max 15%) (€)"]
             for col in cols_a_sumar:
                 suma = df[col].apply(euro_a_numero).sum()
@@ -209,19 +197,16 @@ if opcion == "📊 Dividendos a Excel":
 elif opcion == "🛒 Compras/Ventas a Excel":
     st.title("🛒 Extractor de Compras y Ventas")
     st.write("Sube tus justificantes de operaciones de bolsa (ING) para obtener el desglose de comisiones.")
-
     archivos_pdf_op = st.file_uploader("Sube tus PDFs de Operaciones aquí", type=["pdf"], accept_multiple_files=True, key="ops")
 
     if archivos_pdf_op:
         datos_operaciones = []
         total_archivos = len(archivos_pdf_op)
-        
         barra_progreso = st.progress(0)
         texto_estado = st.empty()
 
         for i, archivo in enumerate(archivos_pdf_op):
             texto_estado.text(f"⏳ Procesando ({i+1}/{total_archivos}): {archivo.name}...")
-            
             try:
                 with pdfplumber.open(archivo) as pdf:
                     texto = pdf.pages[0].extract_text(layout=True)
@@ -278,13 +263,11 @@ elif opcion == "🛒 Compras/Ventas a Excel":
             df_op['Fecha_Temporal'] = pd.to_datetime(df_op['Fecha'], format='%d/%m/%Y', errors='coerce')
             df_op = df_op.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
             
-            # === NUEVO: AÑADIR FILA DE TOTALES ===
             fila_totales = {col: "" for col in df_op.columns}
             fila_totales["Fecha"] = "TOTALES"
             cols_a_sumar_op = ["Importe Op.", "Comisión ING", "Gastos Bolsa", "Impuestos", "Comisión Cambio", "Importe Total"]
             for col in cols_a_sumar_op:
                 suma = df_op[col].apply(euro_a_numero).sum()
-                # Le añadimos el " EUR" para que visualmente cuadre con el resto de la columna en Compras
                 fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
             
             df_op = pd.concat([df_op, pd.DataFrame([fila_totales])], ignore_index=True)
@@ -299,20 +282,17 @@ elif opcion == "🛒 Compras/Ventas a Excel":
 elif opcion == "🗂️ Renombrador de PDFs":
     st.title("🗂️ Renombrador Automático Inteligente")
     st.write("Sube **cualquier PDF de ING** (dividendos, compras o ventas mezclados). El sistema los identificará y nombrará automáticamente.")
-
     archivos_pdf_ren = st.file_uploader("Sube tus PDFs aquí", type=["pdf"], accept_multiple_files=True, key="ren")
 
     if archivos_pdf_ren:
         zip_buffer = io.BytesIO()
         total_archivos = len(archivos_pdf_ren)
-        
         barra_progreso = st.progress(0)
         texto_estado = st.empty()
 
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
             for i, archivo in enumerate(archivos_pdf_ren):
                 texto_estado.text(f"⏳ Analizando y renombrando ({i+1}/{total_archivos}): {archivo.name}...")
-                
                 try:
                     with pdfplumber.open(archivo) as pdf:
                         texto = pdf.pages[0].extract_text(layout=True)
@@ -364,20 +344,17 @@ elif opcion == "🗂️ Renombrador de PDFs":
 # ==========================================
 elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
     st.title("📄 Extractor Total del Informe Fiscal")
-    st.write("Sube tu **Informe Fiscal Anual de ING** en PDF para extraer de golpe **todos los Dividendos** y **DRIPs** con su ISIN.")
-
+    st.write("Sube tu **Informe Fiscal Anual de ING** en PDF para extraer de golpe **todos los Dividendos** y **DRIPs**.")
     archivos_pdf_inf = st.file_uploader("Sube tu PDF de Datos Fiscales aquí", type=["pdf"], accept_multiple_files=True, key="inf")
 
     if archivos_pdf_inf:
         datos_informe = []
         total_archivos = len(archivos_pdf_inf)
-        
         barra_progreso = st.progress(0)
         texto_estado = st.empty()
 
         for i, archivo in enumerate(archivos_pdf_inf):
             texto_estado.text(f"⏳ Analizando Informe Fiscal ({i+1}/{total_archivos}): {archivo.name}...")
-            
             try:
                 with pdfplumber.open(archivo) as pdf:
                     texto_completo = ""
@@ -388,12 +365,10 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                     
                     if texto_completo:
                         lineas = texto_completo.split('\n')
-                        
                         patron_drip = r"(.*?)\s+(Nacional|Internacional)\s+(\d{2}/\d{2}/\d{4})\s+STOCK DIVIDEND\s+(\d+)\s+([\d.,]+)\s*€"
                         patron_div = r"(.*?)\s+(Nacional|Internacional)\s+DIVIDENDO\s+([\d,.]+)\s*€\s+([\d,.]+)\s*€(?:\s+([\d,.]+)\s*€)?"
                         
                         for idx, linea in enumerate(lineas):
-                            
                             # === EXTRACCIÓN DE DRIPS ===
                             match_drip = re.search(patron_drip, linea)
                             if match_drip:
@@ -410,7 +385,6 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                     if idx + j >= len(lineas): break
                                     linea_siguiente = lineas[idx + j].strip()
                                     if not linea_siguiente: continue
-                                    
                                     match_isin = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)", linea_siguiente)
                                     if match_isin:
                                         isin_encontrado = match_isin.group(1)
@@ -507,7 +481,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
         texto_estado.empty()
 
         if datos_informe:
-            st.success(f"¡Magia! Se extrajeron {len(datos_informe)} operaciones del informe fiscal (Dividendos y DRIPs).")
+            st.success(f"¡Magia! Se extrajeron {len(datos_informe)} operaciones del informe fiscal.")
             df_informe = pd.DataFrame(datos_informe)
             
             columnas_ordenadas = ["Fecha Abono", "ISIN", "Concepto", "Importe Neto (€)", "Retención en origen (€)", 
@@ -516,7 +490,6 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                   "Importe por título (€)", "Cuenta Abono", "Retención Recuperable (Max 15%) (€)"]
             df_informe = df_informe[columnas_ordenadas]
             
-            # === NUEVO: AÑADIR FILA DE TOTALES ===
             fila_totales = {col: "" for col in df_informe.columns}
             fila_totales["Fecha Abono"] = "TOTALES"
             cols_a_sumar_inf = ["Importe Neto (€)", "Retención en origen (€)", "Retención en destino (€)", "Importe Bruto (€)", "Retención Recuperable (Max 15%) (€)"]
@@ -528,6 +501,87 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
             
             st.dataframe(df_informe)
             csv_informe = df_informe.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar Excel (Con ISIN y Totales)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
-        else:
-            st.info("No se han detectado datos de dividendos en el informe proporcionado.")
+            st.download_button(label="⬇️ Descargar Excel (Con Totales)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
+
+# ==========================================
+# 🚀 APLICACIÓN 5: AUDITORÍA HACIENDA VS ING
+# ==========================================
+elif opcion == "⚖️ Auditoría Hacienda vs ING":
+    st.title("⚖️ Auditor Automático: Hacienda vs ING")
+    st.markdown("""
+    **¡Prepárate para la Declaración de la Renta!**
+    Sube aquí tu Excel generado por la App 4 (Informe Fiscal ING) y el archivo de datos que te descargues de la web de la AEAT (Hacienda) cuando abran la campaña. 
+    El sistema cruzará los ISIN para avisarte si a Hacienda se le ha olvidado algún pago extranjero o si los importes varían.
+    """)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("1️⃣ Sube tu Excel de ING")
+        archivo_ing = st.file_uploader("Sube el archivo CSV de ING", type=["csv"], key="ing_audit")
+    with col2:
+        st.subheader("2️⃣ Sube los Datos de Hacienda")
+        archivo_aeat = st.file_uploader("Sube el archivo Excel/CSV de la AEAT", type=["csv", "xlsx", "xls"], key="aeat_audit")
+
+    if archivo_ing and archivo_aeat:
+        try:
+            # 1. Leemos el archivo de ING
+            df_ing = pd.read_csv(archivo_ing, sep=";")
+            df_ing = df_ing[df_ing["ISIN"] != "ISIN no encontrado"]
+            df_ing = df_ing[df_ing["Fecha Abono"] != "TOTALES"] # Quitamos la fila de totales para no duplicar
+
+            # 2. Leemos el archivo de la AEAT (Soporta Excel o CSV)
+            if archivo_aeat.name.endswith('.csv'):
+                df_aeat = pd.read_csv(archivo_aeat, sep=None, engine='python')
+            else:
+                df_aeat = pd.read_excel(archivo_aeat)
+
+            # 3. Mapeo dinámico: Le pedimos al usuario que nos diga cómo se llaman las columnas en el archivo de la AEAT de este año
+            st.markdown("---")
+            st.markdown("### ⚙️ Configuración de Columnas de Hacienda")
+            st.write("Selecciona qué columna del archivo de Hacienda corresponde a cada dato:")
+            
+            col_sel_1, col_sel_2 = st.columns(2)
+            with col_sel_1:
+                col_isin_aeat = st.selectbox("Columna del ISIN:", df_aeat.columns)
+            with col_sel_2:
+                col_bruto_aeat = st.selectbox("Columna del Rendimiento Bruto (€):", df_aeat.columns)
+
+            if st.button("🚀 Cruzar Datos y Auditar"):
+                # Agrupamos los de ING por ISIN sumando el bruto
+                df_ing['Bruto_Num_ING'] = df_ing['Importe Bruto (€)'].apply(euro_a_numero)
+                ing_agrupado = df_ing.groupby('ISIN')['Bruto_Num_ING'].sum().reset_index()
+
+                # Agrupamos los de AEAT por ISIN sumando el bruto
+                df_aeat['Bruto_Num_AEAT'] = df_aeat[col_bruto_aeat].apply(euro_a_numero)
+                aeat_agrupado = df_aeat.groupby(col_isin_aeat)['Bruto_Num_AEAT'].sum().reset_index()
+                aeat_agrupado = aeat_agrupado.rename(columns={col_isin_aeat: 'ISIN'})
+
+                # Cruzamos ambas tablas
+                df_cruce = pd.merge(ing_agrupado, aeat_agrupado, on='ISIN', how='outer')
+                df_cruce['Bruto_Num_ING'] = df_cruce['Bruto_Num_ING'].fillna(0)
+                df_cruce['Bruto_Num_AEAT'] = df_cruce['Bruto_Num_AEAT'].fillna(0)
+                
+                # Calculamos diferencias
+                df_cruce['Diferencia (€)'] = df_cruce['Bruto_Num_ING'] - df_cruce['Bruto_Num_AEAT']
+
+                # Ponemos el semáforo
+                def estado_auditoria(dif, ing, aeat):
+                    if ing > 0 and aeat == 0: return "🔴 Falta en Hacienda (¡Añádelo!)"
+                    elif aeat > 0 and ing == 0: return "⚠️ Está en Hacienda pero no en ING"
+                    elif abs(dif) > 0.10: return "🟡 Importes no coinciden"
+                    else: return "🟢 ¡Cuadra Perfecto!"
+
+                df_cruce['Estado'] = df_cruce.apply(lambda row: estado_auditoria(row['Diferencia (€)'], row['Bruto_Num_ING'], row['Bruto_Num_AEAT']), axis=1)
+
+                # Formateo visual
+                df_cruce['Bruto ING (€)'] = df_cruce['Bruto_Num_ING'].apply(formato_numero_tabla)
+                df_cruce['Bruto Hacienda (€)'] = df_cruce['Bruto_Num_AEAT'].apply(formato_numero_tabla)
+                df_cruce['Diferencia (€)'] = df_cruce['Diferencia (€)'].apply(formato_numero_tabla)
+                
+                df_final = df_cruce[['ISIN', 'Bruto ING (€)', 'Bruto Hacienda (€)', 'Diferencia (€)', 'Estado']]
+
+                st.markdown("### 📊 Resultado de la Auditoría")
+                st.dataframe(df_final.style.applymap(lambda x: 'background-color: #d4edda' if '🟢' in x else ('background-color: #f8d7da' if '🔴' in x else ('background-color: #fff3cd' if '🟡' or '⚠️' in x else '')), subset=['Estado']))
+                
+        except Exception as e:
+            st.error(f"Error al procesar los archivos. Asegúrate de que el formato es correcto. Detalles: {e}")
