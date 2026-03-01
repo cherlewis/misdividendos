@@ -510,38 +510,42 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
             for archivo in archivos_cv:
                 try:
                     with pdfplumber.open(archivo) as pdf:
-                        # Extraemos el texto normal y el texto con formato para que no se nos escape nada
+                        # Extraemos el texto y aplastamos todos los saltos de línea para que no importe el formato
                         texto_layout = pdf.pages[0].extract_text(layout=True) or ""
                         texto_normal = pdf.pages[0].extract_text() or ""
-                        texto_combinado = texto_normal + "\n" + texto_layout
+                        texto_limpio = re.sub(r'\s+', ' ', texto_layout + " " + texto_normal)
                         
-                        # 1. Encontrar Tipo de Operación
-                        tipo_op = "Desconocido"
-                        if re.search(r'\bCompra\b', texto_combinado, re.IGNORECASE): tipo_op = "Compra"
-                        elif re.search(r'\bVenta\b', texto_combinado, re.IGNORECASE): tipo_op = "Venta"
+                        # 1. Encontrar Tipo de Operación y el bloque exacto de números
+                        patron_bloque = r'\b(Compra|Venta)\b(.*?)(?:Detalle de la orden|Cuenta de cargo|Podrá solicitar)'
+                        match_op = re.search(patron_bloque, texto_limpio, re.IGNORECASE)
                         
-                        # 2. Encontrar ISIN (Ignorando las XXXXXX que genera ING en PDFs de 2022)
-                        isins = re.findall(r'\b[A-Z]{2}[A-Z0-9]{10}\b', texto_combinado)
+                        if match_op:
+                            tipo_op = match_op.group(1).capitalize()
+                            zona_numeros = match_op.group(2)
+                            
+                            # Atrapamos TODOS los números con formato europeo (Ej: 1.113,02 o 49,75)
+                            importes = re.findall(r'\b\d{1,3}(?:\.\d{3})*,\d{2}\b', zona_numeros)
+                            importe_total = importes[-1] if importes else "0,00"
+                        else:
+                            # Plan B por si el PDF es muy raro
+                            match_tipo = re.search(r'\b(Compra|Venta)\b', texto_limpio, re.IGNORECASE)
+                            tipo_op = match_tipo.group(1).capitalize() if match_tipo else "Desconocido"
+                            
+                            importes_todos = re.findall(r'\b\d{1,3}(?:\.\d{3})*,\d{2}\b', texto_limpio)
+                            importe_total = importes_todos[-1] if importes_todos else "0,00"
+
+                        # 2. Encontrar ISIN (Ignoramos las 'XXX' que ING ponía en los PDFs de 2022)
+                        isins = re.findall(r'\b[A-Z]{2}[A-Z0-9]{10}\b', texto_limpio)
                         isin = "Desconocido"
                         for i in isins:
                             if "XXX" not in i:
                                 isin = i
                                 break
                         
-                        # 3. Encontrar Fecha (La primera que aparece arriba)
-                        fechas = re.findall(r'\d{2}/\d{2}/\d{4}', texto_combinado)
+                        # 3. Encontrar Fecha
+                        fechas = re.findall(r'\b\d{2}/\d{2}/\d{4}\b', texto_limpio)
                         fecha = fechas[0] if fechas else "Desconocida"
                         
-                        # 4. Escáner Inteligente del Importe Total
-                        # Cortamos el texto justo donde empieza "Detalle de la orden" para no leer precios unitarios
-                        bloque_principal = re.split(r'Detalle de la orden', texto_combinado, flags=re.IGNORECASE)[0]
-                        
-                        # Atrapamos TODOS los números con formato europeo (Ej: 1.113,02 o 49,75)
-                        importes = re.findall(r'\b\d{1,3}(?:\.\d{3})*,\d{2}\b', bloque_principal)
-                        
-                        # El último número de la tabla principal siempre es el Coste/Importe Total
-                        importe_total = importes[-1] if importes else "0,00"
-                            
                         operaciones.append({
                             "Tipo": tipo_op, 
                             "ISIN": isin, 
@@ -576,4 +580,4 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                 st.markdown("---")
                 st.markdown("💡 **Tip Fiscal:** Copia directamente el **Valor de Adquisición** y el **Valor de Transmisión** en la casilla de *Transmisión de acciones negociadas* de Renta Web. Las comisiones de ING ya están sumadas en la compra y restadas en la venta.")
             else:
-                st.error("❌ No se ha detectado claramente cuál es la Compra y cuál la Venta. Asegúrate de haber subido ambos justificantes.")
+                st.error(f"❌ No se han detectado los datos de Compra y Venta. Operaciones leídas:\n{operaciones}")
