@@ -519,96 +519,115 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
 
 
 # ==========================================
-# 🚀 APLICACIÓN 5: AUDITORÍA HACIENDA VS ING (AHORA CON TRADUCTOR ISIN)
+# 🚀 APLICACIÓN 5: AUDITORÍA HACIENDA VS ING (CRUCE INTELIGENTE POR IMPORTE)
 # ==========================================
 elif opcion == "⚖️ Auditoría Hacienda vs ING":
-    st.title("⚖️ Auditor Automático: Hacienda vs ING")
-    st.markdown("""**¡Prepárate para la Declaración de la Renta!**
-    Sube aquí tu Excel generado por la App 4 (Informe Fiscal ING) y el archivo de datos de la AEAT. 
-    El sistema cruzará los datos y **traducirá los nombres ocultos de Hacienda**.""")
+    st.title("⚖️ Auditor Inteligente (Basado en Importes)")
+    st.markdown("""**¡El fin del caos con los nombres y los ISINs!**
+    Como Hacienda y los bancos usan nombres distintos para las acciones extranjeras, este auditor cruza los datos usando **el importe exacto del dividendo**. 
+    Si Hacienda dice que cobraste 88,40€ y ING dice que Logista te pagó 88,40€, el sistema los unirá automáticamente.""")
 
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("1️⃣ Sube tu Excel de ING")
-        archivo_ing = st.file_uploader("Sube el archivo CSV de ING", type=["csv"], key="ing_audit")
+        archivo_ing = st.file_uploader("Sube el archivo CSV de ING (App 4)", type=["csv"], key="ing_audit")
     with col2:
         st.subheader("2️⃣ Sube los Datos de Hacienda")
-        archivo_aeat = st.file_uploader("Sube el archivo Excel/CSV de la AEAT", type=["csv", "xlsx", "xls"], key="aeat_audit")
+        archivo_aeat = st.file_uploader("Sube el Excel/CSV de la AEAT", type=["csv", "xlsx", "xls"], key="aeat_audit")
 
     if archivo_ing and archivo_aeat:
         try:
+            # 1. Leer archivos
             df_ing = pd.read_csv(archivo_ing, sep=";")
-            df_ing = df_ing[df_ing["ISIN"] != "ISIN no encontrado"]
-            df_ing = df_ing[df_ing["Fecha Abono"] != "TOTALES"] 
-
+            df_ing = df_ing[df_ing["Fecha Abono"] != "TOTALES"] # Quitamos la fila de totales
+            
             if archivo_aeat.name.endswith('.csv'):
                 df_aeat = pd.read_csv(archivo_aeat, sep=None, engine='python')
             else:
                 df_aeat = pd.read_excel(archivo_aeat, engine='openpyxl')
 
-            st.markdown("---")
-            st.markdown("### ⚙️ Configuración de Columnas de Hacienda")
-            st.write("Selecciona qué columna del archivo de Hacienda corresponde a cada dato:")
+            # 2. Detectar columnas de Hacienda automáticamente (o usar las estándar)
+            col_bruto_aeat = "Importe Íntegro" if "Importe Íntegro" in df_aeat.columns else df_aeat.columns[7]
+            col_ret_aeat = "Retenciones" if "Retenciones" in df_aeat.columns else df_aeat.columns[9]
+            col_nom_aeat = "Nombre Emisor" if "Nombre Emisor" in df_aeat.columns else df_aeat.columns[2]
+
+            st.success("¡Archivos cargados! Cruzando los datos por coincidencia de importes...")
+
+            # 3. Preparar Datos de ING
+            df_ing['Bruto_Num'] = df_ing['Importe Bruto (€)'].apply(euro_a_numero).round(2)
+            df_ing['Ret_Num'] = df_ing['Retención en destino (€)'].apply(euro_a_numero).round(2)
             
-            col_sel_1, col_sel_2, col_sel_3 = st.columns(3)
-            with col_sel_1:
-                col_isin_aeat = st.selectbox("Columna del ISIN:", df_aeat.columns)
-            with col_sel_2:
-                col_bruto_aeat = st.selectbox("Columna del Rendimiento Bruto (€):", df_aeat.columns)
-            with col_sel_3:
-                col_nombre_aeat = st.selectbox("Columna Nombre Emisor (Para corregir):", df_aeat.columns)
+            # Filtramos operaciones vacías
+            df_ing = df_ing[df_ing['Bruto_Num'] > 0]
 
-            if st.button("🚀 Cruzar Datos y Auditar"):
-                # 1. Crear diccionario traductor ISIN -> Empresa usando ING
-                mapa_isin_empresa = dict(zip(df_ing['ISIN'], df_ing['Empresa']))
+            # Agrupamos por importe bruto (si dos empresas pagan lo mismo, las suma)
+            ing_agrup = df_ing.groupby('Bruto_Num').agg({
+                'Empresa': lambda x: ' + '.join(x.unique()),
+                'Ret_Num': 'sum'
+            }).reset_index()
+            ing_agrup.rename(columns={'Bruto_Num': 'Importe Bruto', 'Empresa': 'Empresa(s) en ING', 'Ret_Num': 'Retención ING'}, inplace=True)
 
-                # 2. Función para traducir el nombre de Hacienda
-                def arreglar_nombre(nombre_original):
-                    nombre_str = str(nombre_original)
-                    if "CODIGO:" in nombre_str:
-                        isin_hacienda = nombre_str.replace("CODIGO:", "").strip()
-                        return mapa_isin_empresa.get(isin_hacienda, isin_hacienda + " (No en ING)")
-                    return nombre_str
+            # 4. Preparar Datos de Hacienda
+            df_aeat['Bruto_Num'] = df_aeat[col_bruto_aeat].apply(euro_a_numero).round(2)
+            df_aeat['Ret_Num'] = df_aeat[col_ret_aeat].apply(euro_a_numero).round(2)
+            df_aeat = df_aeat[df_aeat['Bruto_Num'] > 0]
 
-                df_aeat['Empresa (Corregida)'] = df_aeat[col_nombre_aeat].apply(arreglar_nombre)
+            def limpiar_nombre_aeat(x):
+                return str(x).replace("CODIGO:", "ISIN:").strip()
+            df_aeat['Nombre Limpio'] = df_aeat[col_nom_aeat].apply(limpiar_nombre_aeat)
 
-                # 3. Sumatorios agrupados ING
-                df_ing['Bruto_Num_ING'] = df_ing['Importe Bruto (€)'].apply(euro_a_numero)
-                ing_agrupado = df_ing.groupby('ISIN').agg({'Bruto_Num_ING': 'sum', 'Empresa': 'first'}).reset_index()
+            aeat_agrup = df_aeat.groupby('Bruto_Num').agg({
+                'Nombre Limpio': lambda x: ' + '.join(x.unique()),
+                'Ret_Num': 'sum'
+            }).reset_index()
+            aeat_agrup.rename(columns={'Bruto_Num': 'Importe Bruto', 'Nombre Limpio': 'Emisor(es) en Hacienda', 'Ret_Num': 'Retención AEAT'}, inplace=True)
 
-                # 4. Sumatorios agrupados AEAT
-                df_aeat['Bruto_Num_AEAT'] = df_aeat[col_bruto_aeat].apply(euro_a_numero)
-                aeat_agrupado = df_aeat.groupby(col_isin_aeat).agg({'Bruto_Num_AEAT': 'sum', 'Empresa (Corregida)': 'first'}).reset_index()
-                aeat_agrupado = aeat_agrupado.rename(columns={col_isin_aeat: 'ISIN'})
+            # 5. EL GRAN CRUCE (Merge por Importe Bruto)
+            df_cruce = pd.merge(ing_agrup, aeat_agrup, on='Importe Bruto', how='outer').fillna(0)
 
-                # 5. Cruce de datos
-                df_cruce = pd.merge(ing_agrupado, aeat_agrupado, on='ISIN', how='outer')
-                df_cruce['Bruto_Num_ING'] = df_cruce['Bruto_Num_ING'].fillna(0)
-                df_cruce['Bruto_Num_AEAT'] = df_cruce['Bruto_Num_AEAT'].fillna(0)
-                df_cruce['Diferencia (€)'] = df_cruce['Bruto_Num_ING'] - df_cruce['Bruto_Num_AEAT']
+            # 6. Limpiar y Formatear
+            df_cruce['Empresa(s) en ING'] = df_cruce['Empresa(s) en ING'].replace(0, "❌ No consta en tu ING")
+            df_cruce['Emisor(es) en Hacienda'] = df_cruce['Emisor(es) en Hacienda'].replace(0, "❌ Falta en tu Borrador")
+            
+            df_cruce['Dif. Retención'] = (df_cruce['Retención ING'] - df_cruce['Retención AEAT']).round(2)
 
-                # Nombre unificado para el Dashboard
-                df_cruce['Empresa Final'] = df_cruce['Empresa'].fillna(df_cruce['Empresa (Corregida)'])
+            def determinar_estado(row):
+                if row['Empresa(s) en ING'] == "❌ No consta en tu ING": return "🔴 Añadido por Hacienda"
+                if row['Emisor(es) en Hacienda'] == "❌ Falta en tu Borrador": return "🔴 Te falta declararlo"
+                if abs(row['Dif. Retención']) > 0.05: return "🟡 Falla la Retención"
+                return "🟢 Cuadra Perfecto"
 
-                def estado_auditoria(dif, ing, aeat):
-                    if ing > 0 and aeat == 0: return "🔴 Falta en Hacienda (¡Añádelo!)"
-                    elif aeat > 0 and ing == 0: return "⚠️ Está en Hacienda pero no en ING"
-                    elif abs(dif) > 0.10: return "🟡 Importes no coinciden"
-                    else: return "🟢 ¡Cuadra Perfecto!"
+            df_cruce['Estado'] = df_cruce.apply(determinar_estado, axis=1)
 
-                df_cruce['Estado'] = df_cruce.apply(lambda row: estado_auditoria(row['Diferencia (€)'], row['Bruto_Num_ING'], row['Bruto_Num_AEAT']), axis=1)
+            # Formato moneda para la tabla final
+            df_cruce['Importe Bruto (€)'] = df_cruce['Importe Bruto'].apply(formato_numero_tabla)
+            df_cruce['Ret. ING (€)'] = df_cruce['Retención ING'].apply(formato_numero_tabla)
+            df_cruce['Ret. AEAT (€)'] = df_cruce['Retención AEAT'].apply(formato_numero_tabla)
+            df_cruce['Diferencia Ret. (€)'] = df_cruce['Dif. Retención'].apply(formato_numero_tabla)
 
-                df_cruce['Bruto ING (€)'] = df_cruce['Bruto_Num_ING'].apply(formato_numero_tabla)
-                df_cruce['Bruto Hacienda (€)'] = df_cruce['Bruto_Num_AEAT'].apply(formato_numero_tabla)
-                df_cruce['Diferencia (€)'] = df_cruce['Diferencia (€)'].apply(formato_numero_tabla)
-                
-                df_final = df_cruce[['Empresa Final', 'ISIN', 'Bruto ING (€)', 'Bruto Hacienda (€)', 'Diferencia (€)', 'Estado']]
+            # Ordenamos para mostrar primero los problemas y luego lo que cuadra
+            df_cruce = df_cruce.sort_values(by='Estado', ascending=False)
+            
+            # Seleccionamos las columnas a mostrar
+            df_final = df_cruce[['Importe Bruto (€)', 'Empresa(s) en ING', 'Emisor(es) en Hacienda', 'Ret. ING (€)', 'Ret. AEAT (€)', 'Diferencia Ret. (€)', 'Estado']]
 
-                st.markdown("### 📊 Resultado de la Auditoría Traducida")
-                st.dataframe(df_final.style.applymap(lambda x: 'background-color: #d4edda' if '🟢' in str(x) else ('background-color: #f8d7da' if '🔴' in str(x) else ('background-color: #fff3cd' if '🟡' in str(x) or '⚠️' in str(x) else '')), subset=['Estado']))
-                
+            st.markdown("---")
+            st.subheader("📋 Tabla de Auditoría (Vinculada por Importes)")
+            
+            # Pintamos de colores según el estado
+            st.dataframe(
+                df_final.style.applymap(
+                    lambda x: 'background-color: #d4edda' if '🟢' in str(x) 
+                    else ('background-color: #f8d7da' if '🔴' in str(x) 
+                    else ('background-color: #fff3cd' if '🟡' in str(x) else '')), 
+                    subset=['Estado']
+                ),
+                use_container_width=True
+            )
+
         except Exception as e:
-            st.error(f"Error al procesar los archivos. Asegúrate de que el formato es correcto. Detalles: {e}")
+            st.error(f"❌ Error al procesar los archivos. Detalles: {e}")
+
 
 
 # ==========================================
