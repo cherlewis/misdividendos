@@ -361,6 +361,10 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
     st.write("Sube tu **Informe Fiscal Anual de ING** en PDF para extraer de golpe **todos los Dividendos** y **DRIPs**.")
     archivos_pdf_inf = st.file_uploader("Sube tu PDF de Datos Fiscales aquí", type=["pdf"], accept_multiple_files=True, key="inf")
 
+    # Función rápida para forzar el formato americano (Punto decimal)
+    def formato_hacienda(val):
+        return f"{euro_a_numero(val):.2f}"
+
     if archivos_pdf_inf:
         datos_informe = []
         total_archivos = len(archivos_pdf_inf)
@@ -408,24 +412,24 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
 
                                 titulos_float = float(titulos) if titulos.isdigit() else 1.0
                                 importe_float = euro_a_numero(importe)
-                                imp_titulo = formato_numero_tabla(importe_float / titulos_float) if titulos_float > 0 else "0,00"
+                                imp_titulo = importe_float / titulos_float if titulos_float > 0 else 0.0
 
                                 datos_informe.append({
                                     "Fecha Abono": fecha,
                                     "ISIN": isin_encontrado, 
                                     "Concepto": f"STOCK DIVIDENDO ({empresa_full})",
-                                    "Importe Neto (€)": importe,
-                                    "Retención en origen (€)": "0,00",
+                                    "Importe Neto (€)": formato_hacienda(importe),
+                                    "Retención en origen (€)": "0.00",
                                     "% retención en origen": "0%",
-                                    "Retención en destino (€)": "0,00",
+                                    "Retención en destino (€)": "0.00",
                                     "% retención en destino": "0%",
-                                    "Importe Bruto (€)": importe,
+                                    "Importe Bruto (€)": formato_hacienda(importe),
                                     "Empresa": empresa_full,
                                     "Cuenta de Valores": "0",
                                     "Número de títulos": titulos,
-                                    "Importe por título (€)": imp_titulo,
+                                    "Importe por título (€)": f"{imp_titulo:.2f}",
                                     "Cuenta Abono": "N/A",
-                                    "Retención Recuperable (Max 15%) (€)": "0,00"
+                                    "Retención Recuperable (Max 15%) (€)": "0.00"
                                 })
                                 continue
                             
@@ -470,18 +474,18 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                     "Fecha Abono": "Resumen 2024",
                                     "ISIN": isin_encontrado, 
                                     "Concepto": f"DIVIDENDO ({empresa_full})",
-                                    "Importe Neto (€)": formato_numero_tabla(neto_num),
-                                    "Retención en origen (€)": ret_origen,
+                                    "Importe Neto (€)": f"{neto_num:.2f}",
+                                    "Retención en origen (€)": formato_hacienda(ret_origen),
                                     "% retención en origen": pct_origen,
-                                    "Retención en destino (€)": ret_destino,
+                                    "Retención en destino (€)": formato_hacienda(ret_destino),
                                     "% retención en destino": pct_destino,
-                                    "Importe Bruto (€)": bruto,
+                                    "Importe Bruto (€)": formato_hacienda(bruto),
                                     "Empresa": empresa_full,
                                     "Cuenta de Valores": "0",
                                     "Número de títulos": "Varios", 
-                                    "Importe por título (€)": "0,00",
+                                    "Importe por título (€)": "0.00",
                                     "Cuenta Abono": "N/A",
-                                    "Retención Recuperable (Max 15%) (€)": ret_recuperable
+                                    "Retención Recuperable (Max 15%) (€)": formato_hacienda(ret_recuperable)
                                 })
             except Exception as e:
                 st.warning(f"⚠️ Error al leer '{archivo.name}'. Se ha omitido.")
@@ -492,7 +496,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
         texto_estado.empty()
 
         if datos_informe:
-            st.success(f"¡Magia! Se extrajeron {len(datos_informe)} operaciones del informe fiscal.")
+            st.success(f"¡Magia! Se extrajeron {len(datos_informe)} operaciones del informe fiscal en formato Hacienda.")
             df_informe = pd.DataFrame(datos_informe)
             
             columnas_ordenadas = ["Fecha Abono", "ISIN", "Concepto", "Importe Neto (€)", "Retención en origen (€)", 
@@ -506,12 +510,13 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
             cols_a_sumar_inf = ["Importe Neto (€)", "Retención en origen (€)", "Retención en destino (€)", "Importe Bruto (€)", "Retención Recuperable (Max 15%) (€)"]
             for col in cols_a_sumar_inf:
                 suma = df_informe[col].apply(euro_a_numero).sum()
-                fila_totales[col] = formato_numero_tabla(suma)
+                fila_totales[col] = f"{suma:.2f}"
             
             df_informe = pd.concat([df_informe, pd.DataFrame([fila_totales])], ignore_index=True)
             st.dataframe(df_informe)
             csv_informe = df_informe.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar Excel (Con Totales)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
+            st.download_button(label="⬇️ Descargar Excel (Formato AEAT)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
+
 
 # ==========================================
 # 🚀 APLICACIÓN 5: AUDITORÍA HACIENDA VS ING (AHORA CON TRADUCTOR ISIN)
