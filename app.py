@@ -179,7 +179,6 @@ if opcion == "📊 Dividendos a Excel":
             st.markdown("---")
             df = df.drop(columns=['num_bruto', 'num_neto', 'num_ret_origen', 'num_ret_destino', 'Grupo_Pais'])
             
-            # Fila de totales
             fila_totales = {col: "" for col in df.columns}
             fila_totales["Fecha Abono"] = "TOTALES"
             cols_a_sumar = ["Importe Neto (€)", "Retención en origen (€)", "Retención en destino (€)", "Importe Bruto (€)", "Retención Recuperable (Max 15%) (€)"]
@@ -496,13 +495,13 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
             st.download_button(label="⬇️ Descargar Excel (Con Totales)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
 
 # ==========================================
-# 🚀 APLICACIÓN 5: AUDITORÍA HACIENDA VS ING
+# 🚀 APLICACIÓN 5: AUDITORÍA HACIENDA VS ING (AHORA CON TRADUCTOR ISIN)
 # ==========================================
 elif opcion == "⚖️ Auditoría Hacienda vs ING":
     st.title("⚖️ Auditor Automático: Hacienda vs ING")
     st.markdown("""**¡Prepárate para la Declaración de la Renta!**
-    Sube aquí tu Excel generado por la App 4 (Informe Fiscal ING) y el archivo de datos que te descargues de la web de la AEAT. 
-    El sistema cruzará los ISIN para avisarte si a Hacienda se le ha olvidado algún pago.""")
+    Sube aquí tu Excel generado por la App 4 (Informe Fiscal ING) y el archivo de datos de la AEAT. 
+    El sistema cruzará los datos y **traducirá los nombres ocultos de Hacienda**.""")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -521,30 +520,51 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
             if archivo_aeat.name.endswith('.csv'):
                 df_aeat = pd.read_csv(archivo_aeat, sep=None, engine='python')
             else:
-                df_aeat = pd.read_excel(archivo_aeat)
+                df_aeat = pd.read_excel(archivo_aeat, engine='openpyxl')
 
             st.markdown("---")
             st.markdown("### ⚙️ Configuración de Columnas de Hacienda")
             st.write("Selecciona qué columna del archivo de Hacienda corresponde a cada dato:")
             
-            col_sel_1, col_sel_2 = st.columns(2)
+            col_sel_1, col_sel_2, col_sel_3 = st.columns(3)
             with col_sel_1:
                 col_isin_aeat = st.selectbox("Columna del ISIN:", df_aeat.columns)
             with col_sel_2:
                 col_bruto_aeat = st.selectbox("Columna del Rendimiento Bruto (€):", df_aeat.columns)
+            with col_sel_3:
+                col_nombre_aeat = st.selectbox("Columna Nombre Emisor (Para corregir):", df_aeat.columns)
 
             if st.button("🚀 Cruzar Datos y Auditar"):
-                df_ing['Bruto_Num_ING'] = df_ing['Importe Bruto (€)'].apply(euro_a_numero)
-                ing_agrupado = df_ing.groupby('ISIN')['Bruto_Num_ING'].sum().reset_index()
+                # 1. Crear diccionario traductor ISIN -> Empresa usando ING
+                mapa_isin_empresa = dict(zip(df_ing['ISIN'], df_ing['Empresa']))
 
+                # 2. Función para traducir el nombre de Hacienda
+                def arreglar_nombre(nombre_original):
+                    nombre_str = str(nombre_original)
+                    if "CODIGO:" in nombre_str:
+                        isin_hacienda = nombre_str.replace("CODIGO:", "").strip()
+                        return mapa_isin_empresa.get(isin_hacienda, isin_hacienda + " (No en ING)")
+                    return nombre_str
+
+                df_aeat['Empresa (Corregida)'] = df_aeat[col_nombre_aeat].apply(arreglar_nombre)
+
+                # 3. Sumatorios agrupados ING
+                df_ing['Bruto_Num_ING'] = df_ing['Importe Bruto (€)'].apply(euro_a_numero)
+                ing_agrupado = df_ing.groupby('ISIN').agg({'Bruto_Num_ING': 'sum', 'Empresa': 'first'}).reset_index()
+
+                # 4. Sumatorios agrupados AEAT
                 df_aeat['Bruto_Num_AEAT'] = df_aeat[col_bruto_aeat].apply(euro_a_numero)
-                aeat_agrupado = df_aeat.groupby(col_isin_aeat)['Bruto_Num_AEAT'].sum().reset_index()
+                aeat_agrupado = df_aeat.groupby(col_isin_aeat).agg({'Bruto_Num_AEAT': 'sum', 'Empresa (Corregida)': 'first'}).reset_index()
                 aeat_agrupado = aeat_agrupado.rename(columns={col_isin_aeat: 'ISIN'})
 
+                # 5. Cruce de datos
                 df_cruce = pd.merge(ing_agrupado, aeat_agrupado, on='ISIN', how='outer')
                 df_cruce['Bruto_Num_ING'] = df_cruce['Bruto_Num_ING'].fillna(0)
                 df_cruce['Bruto_Num_AEAT'] = df_cruce['Bruto_Num_AEAT'].fillna(0)
                 df_cruce['Diferencia (€)'] = df_cruce['Bruto_Num_ING'] - df_cruce['Bruto_Num_AEAT']
+
+                # Nombre unificado para el Dashboard
+                df_cruce['Empresa Final'] = df_cruce['Empresa'].fillna(df_cruce['Empresa (Corregida)'])
 
                 def estado_auditoria(dif, ing, aeat):
                     if ing > 0 and aeat == 0: return "🔴 Falta en Hacienda (¡Añádelo!)"
@@ -558,14 +578,13 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
                 df_cruce['Bruto Hacienda (€)'] = df_cruce['Bruto_Num_AEAT'].apply(formato_numero_tabla)
                 df_cruce['Diferencia (€)'] = df_cruce['Diferencia (€)'].apply(formato_numero_tabla)
                 
-                df_final = df_cruce[['ISIN', 'Bruto ING (€)', 'Bruto Hacienda (€)', 'Diferencia (€)', 'Estado']]
+                df_final = df_cruce[['Empresa Final', 'ISIN', 'Bruto ING (€)', 'Bruto Hacienda (€)', 'Diferencia (€)', 'Estado']]
 
-                st.markdown("### 📊 Resultado de la Auditoría")
+                st.markdown("### 📊 Resultado de la Auditoría Traducida")
                 st.dataframe(df_final.style.applymap(lambda x: 'background-color: #d4edda' if '🟢' in str(x) else ('background-color: #f8d7da' if '🔴' in str(x) else ('background-color: #fff3cd' if '🟡' in str(x) or '⚠️' in str(x) else '')), subset=['Estado']))
                 
         except Exception as e:
             st.error(f"Error al procesar los archivos. Asegúrate de que el formato es correcto. Detalles: {e}")
-
 
 
 # ==========================================
@@ -595,32 +614,25 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                         titulos = "0"
                         
                         # TRUCO MAESTRO: Buscamos "Compra" o "Venta" que vaya seguido inmediatamente de un número.
-                        # Esto evita que se atasque en la cabecera que dice "Comisión compra / venta"
                         match_tipo = re.search(r'\b(Compra|Venta)\b\s+(?=\d)', texto_limpio, re.IGNORECASE)
                         
                         if match_tipo:
                             tipo_op = match_tipo.group(1).capitalize()
                             idx = match_tipo.end()
                             
-                            # Tomamos los siguientes 300 caracteres justo donde empiezan los precios
                             zona_cruda = texto_limpio[idx:idx+300]
-                            
-                            # Cortamos la lectura en cuanto aparezca un IBAN, una fecha, o palabras clave
                             zona_numeros = re.split(r'(?:ES\d{10}|\b\d{2}/\d{2}/\d{4}\b|Cuenta|Detalle|Limitada)', zona_cruda, flags=re.IGNORECASE)[0]
-                            
-                            # Extraemos la secuencia limpia de precios
                             importes = re.findall(r'\d{1,3}(?:\.\d{3})*,\d{2}', zona_numeros)
                             
                             if len(importes) >= 2:
                                 precio_ud = euro_a_numero(importes[0])
                                 efectivo = euro_a_numero(importes[1])
-                                importe_total = importes[-1] # El último número de la lista siempre es el Coste Total
+                                importe_total = importes[-1] 
                                 
-                                # Cálculo matemático de títulos (Efectivo / Precio)
                                 if precio_ud > 0:
                                     titulos = str(int(round(efectivo / precio_ud)))
 
-                        # 2. Encontrar ISIN (Ignorando las 'XXX' de los PDFs antiguos)
+                        # 2. Encontrar ISIN 
                         isins = re.findall(r'\b[A-Z]{2}[A-Z0-9]{10}\b', texto_limpio)
                         isin = "Desconocido"
                         for i in isins:
