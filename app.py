@@ -365,20 +365,59 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
     def formato_hacienda(val):
         return f"{euro_a_numero(val):.2f}"
 
-    def obtener_bandera(isin):
-        """Devuelve la bandera y el nombre del país según las 2 primeras letras del ISIN."""
-        if not isinstance(isin, str) or len(isin) < 2 or isin == "ISIN no encontrado": 
-            return "🏳️ Desconocido"
+def obtener_bandera(isin, empresa):
+        """Devuelve la bandera usando el ISIN o, si falta, analizando el nombre de la empresa."""
+        # 1. Intentamos por ISIN primero
+        if isinstance(isin, str) and len(isin) >= 2 and isin != "ISIN no encontrado":
+            prefijo = isin[:2].upper()
+            banderas = {
+                "ES": "🇪🇸 España", "US": "🇺🇸 USA", "DE": "🇩🇪 Alemania", 
+                "FR": "🇫🇷 Francia", "NL": "🇳🇱 Países Bajos", "GB": "🇬🇧 Reino Unido", 
+                "IE": "🇮🇪 Irlanda", "CH": "🇨🇭 Suiza", "IT": "🇮🇹 Italia",
+                "BE": "🇧🇪 Bélgica", "PT": "🇵🇹 Portugal", "SE": "🇸🇪 Suecia",
+                "CA": "🇨🇦 Canadá", "JP": "🇯🇵 Japón", "AU": "🇦🇺 Australia"
+            }
+            if prefijo in banderas:
+                return banderas[prefijo]
         
-        prefijo = isin[:2].upper()
-        banderas = {
-            "ES": "🇪🇸 España", "US": "🇺🇸 USA", "DE": "🇩🇪 Alemania", 
-            "FR": "🇫🇷 Francia", "NL": "🇳🇱 Países Bajos", "GB": "🇬🇧 Reino Unido", 
-            "IE": "🇮🇪 Irlanda", "CH": "🇨🇭 Suiza", "IT": "🇮🇹 Italia",
-            "BE": "🇧🇪 Bélgica", "PT": "🇵🇹 Portugal", "SE": "🇸🇪 Suecia",
-            "CA": "🇨🇦 Canadá", "JP": "🇯🇵 Japón", "AU": "🇦🇺 Australia"
+        # 2. Si no hay ISIN, somos detectives con el nombre de la empresa
+        empresa_mayus = str(empresa).upper()
+        
+        # Diccionario directo de tu cartera (infalible)
+        conocidas = {
+            "BASF": "🇩🇪 Alemania",
+            "ALLIANZ": "🇩🇪 Alemania",
+            "LOUIS VUITTON": "🇫🇷 Francia",
+            "LVMH": "🇫🇷 Francia",
+            "AHOLD": "🇳🇱 Países Bajos",
+            "ASML": "🇳🇱 Países Bajos",
+            "MONDI": "🇬🇧 Reino Unido",
+            "PEPSICO": "🇺🇸 USA",
+            "T ROWE PRICE": "🇺🇸 USA",
+            "MCDONALDS": "🇺🇸 USA",
+            "3M CO": "🇺🇸 USA",
+            "TYSON FOODS": "🇺🇸 USA",
+            "REALTY INCOME": "🇺🇸 USA",
+            "W.P. CAREY": "🇺🇸 USA",
+            "AMERICAN TOWER": "🇺🇸 USA",
+            "VERIZON": "🇺🇸 USA",
+            "INTEL": "🇺🇸 USA",
+            "PHILIP MORRIS": "🇺🇸 USA"
         }
-        return banderas.get(prefijo, f"🏳️ Otro ({prefijo})")
+        
+        for clave, pais in conocidas.items():
+            if clave in empresa_mayus:
+                return pais
+                
+        # 3. Terminaciones legales corporativas
+        if " INC" in empresa_mayus or " CORP" in empresa_mayus or " LLC" in empresa_mayus: return "🇺🇸 USA"
+        if " NV" in empresa_mayus: return "🇳🇱 Países Bajos"
+        if " AG" in empresa_mayus: return "🇩🇪 Alemania"
+        if " PLC" in empresa_mayus: return "🇬🇧 Reino Unido"
+        if " SA" in empresa_mayus: return "🇪🇸/🇫🇷 SA" # Puede ser francesa o española
+            
+        return "🏳️ Desconocido"
+
 
     if archivos_pdf_inf:
         datos_informe = []
