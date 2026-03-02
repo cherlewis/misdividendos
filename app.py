@@ -353,6 +353,7 @@ elif opcion == "🗂️ Renombrador de PDFs":
         st.success("¡Todos los archivos procesables han sido empaquetados!")
         st.download_button(label="📦 Descargar ZIP con PDFs renombrados", data=zip_buffer.getvalue(), file_name="Movimientos_Organizados.zip", mime="application/zip")
 
+
 # ==========================================
 # 🚀 APLICACIÓN 4: INFORME FISCAL (DIVIDENDOS Y DRIPS)
 # ==========================================
@@ -363,6 +364,21 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
 
     def formato_hacienda(val):
         return f"{euro_a_numero(val):.2f}"
+
+    def obtener_bandera(isin):
+        """Devuelve la bandera y el nombre del país según las 2 primeras letras del ISIN."""
+        if not isinstance(isin, str) or len(isin) < 2 or isin == "ISIN no encontrado": 
+            return "🏳️ Desconocido"
+        
+        prefijo = isin[:2].upper()
+        banderas = {
+            "ES": "🇪🇸 España", "US": "🇺🇸 USA", "DE": "🇩🇪 Alemania", 
+            "FR": "🇫🇷 Francia", "NL": "🇳🇱 Países Bajos", "GB": "🇬🇧 Reino Unido", 
+            "IE": "🇮🇪 Irlanda", "CH": "🇨🇭 Suiza", "IT": "🇮🇹 Italia",
+            "BE": "🇧🇪 Bélgica", "PT": "🇵🇹 Portugal", "SE": "🇸🇪 Suecia",
+            "CA": "🇨🇦 Canadá", "JP": "🇯🇵 Japón", "AU": "🇦🇺 Australia"
+        }
+        return banderas.get(prefijo, f"🏳️ Otro ({prefijo})")
 
     if archivos_pdf_inf:
         datos_informe = []
@@ -424,6 +440,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                     "% retención en destino": "0%",
                                     "Importe Bruto (€)": formato_hacienda(importe),
                                     "Empresa": empresa_full,
+                                    "País": obtener_bandera(isin_encontrado),
                                     "Cuenta de Valores": "0",
                                     "Número de títulos": titulos,
                                     "Importe por título (€)": f"{imp_titulo:.2f}",
@@ -480,6 +497,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
                                     "% retención en destino": pct_destino,
                                     "Importe Bruto (€)": formato_hacienda(bruto),
                                     "Empresa": empresa_full,
+                                    "País": obtener_bandera(isin_encontrado),
                                     "Cuenta de Valores": "0",
                                     "Número de títulos": "Varios", 
                                     "Importe por título (€)": "0.00",
@@ -497,18 +515,14 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
         if datos_informe:
             st.success(f"¡Magia! Se extrajeron {len(datos_informe)} operaciones del informe fiscal en formato Hacienda.")
             
-            # --- NUEVO: CÁLCULOS PARA LAS CASILLAS DE LA RENTA ---
-            # 1. Casilla 029 (Absolutamente todos los dividendos brutos)
+            # --- CÁLCULOS PARA LAS CASILLAS DE LA RENTA ---
             total_bruto_029 = sum(euro_a_numero(d["Importe Bruto (€)"]) for d in datos_informe)
             
-            # 2. Casilla 588 (Filtramos solo los que retienen 15%, 25% o 26,375%)
             datos_ext = [d for d in datos_informe if d["% retención en origen"] in ["15%", "25%", "26,375%"]]
-            
             total_bruto_588 = sum(euro_a_numero(d["Importe Bruto (€)"]) for d in datos_ext)
             total_neto_588 = sum(euro_a_numero(d["Importe Neto (€)"]) for d in datos_ext)
             total_ret_recup_588 = sum(euro_a_numero(d["Retención Recuperable (Max 15%) (€)"]) for d in datos_ext)
 
-            # Pintamos el "Dashboard" con los totales
             st.markdown("---")
             st.header("📝 Resumen Automático para la Renta")
             
@@ -522,13 +536,13 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
             col_r3.metric("Retención Recuperable (Máx 15%)", f"{total_ret_recup_588:.2f} €")
             st.caption("*Nota: La retención ya está calculada aplicando automáticamente el tope máximo legal del 15% para países como Alemania o Francia.*")
             st.markdown("---")
-            # ----------------------------------------------------
 
             df_informe = pd.DataFrame(datos_informe)
             
+            # Orden de las columnas con "País" justo al lado de "Empresa"
             columnas_ordenadas = ["Fecha Abono", "ISIN", "Concepto", "Importe Neto (€)", "Retención en origen (€)", 
                                   "% retención en origen", "Retención en destino (€)", "% retención en destino", 
-                                  "Importe Bruto (€)", "Empresa", "Cuenta de Valores", "Número de títulos", 
+                                  "Importe Bruto (€)", "Empresa", "País", "Cuenta de Valores", "Número de títulos", 
                                   "Importe por título (€)", "Cuenta Abono", "Retención Recuperable (Max 15%) (€)"]
             df_informe = df_informe[columnas_ordenadas]
             
@@ -543,6 +557,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
             st.dataframe(df_informe)
             csv_informe = df_informe.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel (Formato AEAT)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
+
 
 
 
