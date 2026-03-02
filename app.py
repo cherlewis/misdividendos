@@ -38,30 +38,23 @@ def calcular_porcentaje(parte_str, total_str):
 def euro_a_numero(val):
     try:
         if pd.isna(val): return 0.0
-        # Si ya es un número (como los del archivo de Hacienda), lo dejamos tal cual
         if isinstance(val, (int, float)): return float(val)
         
-        # Si es texto (como nuestro CSV de ING), lo limpiamos
         limpio = re.sub(r'[^\d,.-]', '', str(val))
         if not limpio: return 0.0
         
-        # Inteligencia para detectar el formato correcto:
         if ',' in limpio and '.' in limpio:
             if limpio.rfind(',') > limpio.rfind('.'):
-                # Formato español (ej. 1.234,56)
                 limpio = limpio.replace('.', '').replace(',', '.')
             else:
-                # Formato americano (ej. 1,234.56)
                 limpio = limpio.replace(',', '')
         elif ',' in limpio:
-            # Formato español sin miles (ej. 15,25)
             limpio = limpio.replace(',', '.')
-        # Si solo tiene punto (ej. 15.25), Python ya lo entiende como americano, lo dejamos.
-        
+            
         return float(limpio)
     except:
         return 0.0
-        
+
 def formatear_moneda(numero):
     return f"{numero:,.2f} €".replace(',', 'X').replace('.', ',').replace('X', '.')
 
@@ -353,7 +346,6 @@ elif opcion == "🗂️ Renombrador de PDFs":
         st.success("¡Todos los archivos procesables han sido empaquetados!")
         st.download_button(label="📦 Descargar ZIP con PDFs renombrados", data=zip_buffer.getvalue(), file_name="Movimientos_Organizados.zip", mime="application/zip")
 
-
 # ==========================================
 # 🚀 APLICACIÓN 4: INFORME FISCAL (DIVIDENDOS Y DRIPS)
 # ==========================================
@@ -364,10 +356,8 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
 
     def formato_hacienda(val):
         return f"{euro_a_numero(val):.2f}"
-
-def obtener_bandera(isin, empresa):
-        """Devuelve la bandera usando el ISIN o, si falta, analizando el nombre de la empresa."""
-        # 1. Intentamos por ISIN primero
+        
+    def obtener_bandera(isin, empresa):
         if isinstance(isin, str) and len(isin) >= 2 and isin != "ISIN no encontrado":
             prefijo = isin[:2].upper()
             banderas = {
@@ -380,44 +370,30 @@ def obtener_bandera(isin, empresa):
             if prefijo in banderas:
                 return banderas[prefijo]
         
-        # 2. Si no hay ISIN, somos detectives con el nombre de la empresa
         empresa_mayus = str(empresa).upper()
-        
-        # Diccionario directo de tu cartera (infalible)
         conocidas = {
-            "BASF": "🇩🇪 Alemania",
-            "ALLIANZ": "🇩🇪 Alemania",
-            "LOUIS VUITTON": "🇫🇷 Francia",
-            "LVMH": "🇫🇷 Francia",
-            "AHOLD": "🇳🇱 Países Bajos",
-            "ASML": "🇳🇱 Países Bajos",
-            "MONDI": "🇬🇧 Reino Unido",
-            "PEPSICO": "🇺🇸 USA",
-            "T ROWE PRICE": "🇺🇸 USA",
-            "MCDONALDS": "🇺🇸 USA",
-            "3M CO": "🇺🇸 USA",
-            "TYSON FOODS": "🇺🇸 USA",
-            "REALTY INCOME": "🇺🇸 USA",
-            "W.P. CAREY": "🇺🇸 USA",
-            "AMERICAN TOWER": "🇺🇸 USA",
-            "VERIZON": "🇺🇸 USA",
-            "INTEL": "🇺🇸 USA",
-            "PHILIP MORRIS": "🇺🇸 USA"
+            "BASF": "🇩🇪 Alemania", "ALLIANZ": "🇩🇪 Alemania",
+            "LOUIS VUITTON": "🇫🇷 Francia", "LVMH": "🇫🇷 Francia",
+            "AHOLD": "🇳🇱 Países Bajos", "ASML": "🇳🇱 Países Bajos",
+            "MONDI": "🇬🇧 Reino Unido", "PEPSICO": "🇺🇸 USA",
+            "T ROWE PRICE": "🇺🇸 USA", "MCDONALDS": "🇺🇸 USA",
+            "3M CO": "🇺🇸 USA", "TYSON FOODS": "🇺🇸 USA",
+            "REALTY INCOME": "🇺🇸 USA", "W.P. CAREY": "🇺🇸 USA",
+            "AMERICAN TOWER": "🇺🇸 USA", "VERIZON": "🇺🇸 USA",
+            "INTEL": "🇺🇸 USA", "PHILIP MORRIS": "🇺🇸 USA"
         }
         
         for clave, pais in conocidas.items():
             if clave in empresa_mayus:
                 return pais
                 
-        # 3. Terminaciones legales corporativas
         if " INC" in empresa_mayus or " CORP" in empresa_mayus or " LLC" in empresa_mayus: return "🇺🇸 USA"
         if " NV" in empresa_mayus: return "🇳🇱 Países Bajos"
         if " AG" in empresa_mayus: return "🇩🇪 Alemania"
         if " PLC" in empresa_mayus: return "🇬🇧 Reino Unido"
-        if " SA" in empresa_mayus: return "🇪🇸/🇫🇷 SA" # Puede ser francesa o española
+        if " SA" in empresa_mayus: return "🇪🇸/🇫🇷 SA"
             
         return "🏳️ Desconocido"
-
 
     if archivos_pdf_inf:
         datos_informe = []
@@ -479,7 +455,7 @@ def obtener_bandera(isin, empresa):
                                     "% retención en destino": "0%",
                                     "Importe Bruto (€)": formato_hacienda(importe),
                                     "Empresa": empresa_full,
-                                    "País": obtener_bandera(isin_encontrado),
+                                    "País": obtener_bandera(isin_encontrado, empresa_full),
                                     "Cuenta de Valores": "0",
                                     "Número de títulos": titulos,
                                     "Importe por título (€)": f"{imp_titulo:.2f}",
@@ -536,7 +512,7 @@ def obtener_bandera(isin, empresa):
                                     "% retención en destino": pct_destino,
                                     "Importe Bruto (€)": formato_hacienda(bruto),
                                     "Empresa": empresa_full,
-                                    "País": obtener_bandera(isin_encontrado),
+                                    "País": obtener_bandera(isin_encontrado, empresa_full),
                                     "Cuenta de Valores": "0",
                                     "Número de títulos": "Varios", 
                                     "Importe por título (€)": "0.00",
@@ -554,7 +530,6 @@ def obtener_bandera(isin, empresa):
         if datos_informe:
             st.success(f"¡Magia! Se extrajeron {len(datos_informe)} operaciones del informe fiscal en formato Hacienda.")
             
-            # --- CÁLCULOS PARA LAS CASILLAS DE LA RENTA ---
             total_bruto_029 = sum(euro_a_numero(d["Importe Bruto (€)"]) for d in datos_informe)
             
             datos_ext = [d for d in datos_informe if d["% retención en origen"] in ["15%", "25%", "26,375%"]]
@@ -578,7 +553,6 @@ def obtener_bandera(isin, empresa):
 
             df_informe = pd.DataFrame(datos_informe)
             
-            # Orden de las columnas con "País" justo al lado de "Empresa"
             columnas_ordenadas = ["Fecha Abono", "ISIN", "Concepto", "Importe Neto (€)", "Retención en origen (€)", 
                                   "% retención en origen", "Retención en destino (€)", "% retención en destino", 
                                   "Importe Bruto (€)", "Empresa", "País", "Cuenta de Valores", "Número de títulos", 
@@ -597,11 +571,8 @@ def obtener_bandera(isin, empresa):
             csv_informe = df_informe.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel (Formato AEAT)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
 
-
-
-
 # ==========================================
-# 🚀 APLICACIÓN 5: AUDITORÍA HACIENDA VS ING (CRUCE INTELIGENTE POR IMPORTE)
+# 🚀 APLICACIÓN 5: AUDITORÍA HACIENDA VS ING
 # ==========================================
 elif opcion == "⚖️ Auditoría Hacienda vs ING":
     st.title("⚖️ Auditor Inteligente (Basado en Importes)")
@@ -619,37 +590,31 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
 
     if archivo_ing and archivo_aeat:
         try:
-            # 1. Leer archivos
             df_ing = pd.read_csv(archivo_ing, sep=";")
-            df_ing = df_ing[df_ing["Fecha Abono"] != "TOTALES"] # Quitamos la fila de totales
+            df_ing = df_ing[df_ing["Fecha Abono"] != "TOTALES"]
             
             if archivo_aeat.name.endswith('.csv'):
                 df_aeat = pd.read_csv(archivo_aeat, sep=None, engine='python')
             else:
                 df_aeat = pd.read_excel(archivo_aeat, engine='openpyxl')
 
-            # 2. Detectar columnas de Hacienda automáticamente (o usar las estándar)
             col_bruto_aeat = "Importe Íntegro" if "Importe Íntegro" in df_aeat.columns else df_aeat.columns[7]
             col_ret_aeat = "Retenciones" if "Retenciones" in df_aeat.columns else df_aeat.columns[9]
             col_nom_aeat = "Nombre Emisor" if "Nombre Emisor" in df_aeat.columns else df_aeat.columns[2]
 
             st.success("¡Archivos cargados! Cruzando los datos por coincidencia de importes...")
 
-            # 3. Preparar Datos de ING
             df_ing['Bruto_Num'] = df_ing['Importe Bruto (€)'].apply(euro_a_numero).round(2)
             df_ing['Ret_Num'] = df_ing['Retención en destino (€)'].apply(euro_a_numero).round(2)
             
-            # Filtramos operaciones vacías
             df_ing = df_ing[df_ing['Bruto_Num'] > 0]
 
-            # Agrupamos por importe bruto (si dos empresas pagan lo mismo, las suma)
             ing_agrup = df_ing.groupby('Bruto_Num').agg({
                 'Empresa': lambda x: ' + '.join(x.unique()),
                 'Ret_Num': 'sum'
             }).reset_index()
             ing_agrup.rename(columns={'Bruto_Num': 'Importe Bruto', 'Empresa': 'Empresa(s) en ING', 'Ret_Num': 'Retención ING'}, inplace=True)
 
-            # 4. Preparar Datos de Hacienda
             df_aeat['Bruto_Num'] = df_aeat[col_bruto_aeat].apply(euro_a_numero).round(2)
             df_aeat['Ret_Num'] = df_aeat[col_ret_aeat].apply(euro_a_numero).round(2)
             df_aeat = df_aeat[df_aeat['Bruto_Num'] > 0]
@@ -664,10 +629,8 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
             }).reset_index()
             aeat_agrup.rename(columns={'Bruto_Num': 'Importe Bruto', 'Nombre Limpio': 'Emisor(es) en Hacienda', 'Ret_Num': 'Retención AEAT'}, inplace=True)
 
-            # 5. EL GRAN CRUCE (Merge por Importe Bruto)
             df_cruce = pd.merge(ing_agrup, aeat_agrup, on='Importe Bruto', how='outer').fillna(0)
 
-            # 6. Limpiar y Formatear
             df_cruce['Empresa(s) en ING'] = df_cruce['Empresa(s) en ING'].replace(0, "❌ No consta en tu ING")
             df_cruce['Emisor(es) en Hacienda'] = df_cruce['Emisor(es) en Hacienda'].replace(0, "❌ Falta en tu Borrador")
             
@@ -681,22 +644,18 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
 
             df_cruce['Estado'] = df_cruce.apply(determinar_estado, axis=1)
 
-            # Formato moneda para la tabla final
             df_cruce['Importe Bruto (€)'] = df_cruce['Importe Bruto'].apply(formato_numero_tabla)
             df_cruce['Ret. ING (€)'] = df_cruce['Retención ING'].apply(formato_numero_tabla)
             df_cruce['Ret. AEAT (€)'] = df_cruce['Retención AEAT'].apply(formato_numero_tabla)
             df_cruce['Diferencia Ret. (€)'] = df_cruce['Dif. Retención'].apply(formato_numero_tabla)
 
-            # Ordenamos para mostrar primero los problemas y luego lo que cuadra
             df_cruce = df_cruce.sort_values(by='Estado', ascending=False)
             
-            # Seleccionamos las columnas a mostrar
             df_final = df_cruce[['Importe Bruto (€)', 'Empresa(s) en ING', 'Emisor(es) en Hacienda', 'Ret. ING (€)', 'Ret. AEAT (€)', 'Diferencia Ret. (€)', 'Estado']]
 
             st.markdown("---")
             st.subheader("📋 Tabla de Auditoría (Vinculada por Importes)")
             
-            # Pintamos de colores según el estado
             st.dataframe(
                 df_final.style.applymap(
                     lambda x: 'background-color: #d4edda' if '🟢' in str(x) 
@@ -709,8 +668,6 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
 
         except Exception as e:
             st.error(f"❌ Error al procesar los archivos. Detalles: {e}")
-
-
 
 # ==========================================
 # 🚀 APLICACIÓN 6: CALCULADORA DE PLUSVALÍAS
@@ -733,12 +690,10 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                         texto_normal = pdf.pages[0].extract_text() or ""
                         texto_limpio = re.sub(r'\s+', ' ', texto_layout + " " + texto_normal)
                         
-                        # 1. Encontrar Tipo de Operación y los números
                         tipo_op = "Desconocido"
                         importe_total = "0,00"
                         titulos = "0"
                         
-                        # TRUCO MAESTRO: Buscamos "Compra" o "Venta" que vaya seguido inmediatamente de un número.
                         match_tipo = re.search(r'\b(Compra|Venta)\b\s+(?=\d)', texto_limpio, re.IGNORECASE)
                         
                         if match_tipo:
@@ -757,7 +712,6 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                                 if precio_ud > 0:
                                     titulos = str(int(round(efectivo / precio_ud)))
 
-                        # 2. Encontrar ISIN 
                         isins = re.findall(r'\b[A-Z]{2}[A-Z0-9]{10}\b', texto_limpio)
                         isin = "Desconocido"
                         for i in isins:
@@ -765,7 +719,6 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                                 isin = i
                                 break
                         
-                        # 3. Encontrar Fecha
                         fechas = re.findall(r'\b\d{2}/\d{2}/\d{4}\b', texto_limpio)
                         fecha = fechas[0] if fechas else "Desconocida"
                         
