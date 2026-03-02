@@ -361,7 +361,6 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
     st.write("Sube tu **Informe Fiscal Anual de ING** en PDF para extraer de golpe **todos los Dividendos** y **DRIPs**.")
     archivos_pdf_inf = st.file_uploader("Sube tu PDF de Datos Fiscales aquí", type=["pdf"], accept_multiple_files=True, key="inf")
 
-    # Función rápida para forzar el formato americano (Punto decimal)
     def formato_hacienda(val):
         return f"{euro_a_numero(val):.2f}"
 
@@ -497,6 +496,34 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
 
         if datos_informe:
             st.success(f"¡Magia! Se extrajeron {len(datos_informe)} operaciones del informe fiscal en formato Hacienda.")
+            
+            # --- NUEVO: CÁLCULOS PARA LAS CASILLAS DE LA RENTA ---
+            # 1. Casilla 029 (Absolutamente todos los dividendos brutos)
+            total_bruto_029 = sum(euro_a_numero(d["Importe Bruto (€)"]) for d in datos_informe)
+            
+            # 2. Casilla 588 (Filtramos solo los que retienen 15%, 25% o 26,375%)
+            datos_ext = [d for d in datos_informe if d["% retención en origen"] in ["15%", "25%", "26,375%"]]
+            
+            total_bruto_588 = sum(euro_a_numero(d["Importe Bruto (€)"]) for d in datos_ext)
+            total_neto_588 = sum(euro_a_numero(d["Importe Neto (€)"]) for d in datos_ext)
+            total_ret_recup_588 = sum(euro_a_numero(d["Retención Recuperable (Max 15%) (€)"]) for d in datos_ext)
+
+            # Pintamos el "Dashboard" con los totales
+            st.markdown("---")
+            st.header("📝 Resumen Automático para la Renta")
+            
+            st.info("**Casilla 029** (Dividendos y demás rendimientos por la participación en fondos propios de entidades)")
+            st.metric("Suma Total Dividendo Bruto", f"{total_bruto_029:.2f} €")
+            
+            st.info("**Casilla 588** (Deducción por doble imposición internacional)")
+            col_r1, col_r2, col_r3 = st.columns(3)
+            col_r1.metric("Total Brutos (USA/FRA/ALE)", f"{total_bruto_588:.2f} €")
+            col_r2.metric("Total Netos (USA/FRA/ALE)", f"{total_neto_588:.2f} €")
+            col_r3.metric("Retención Recuperable (Máx 15%)", f"{total_ret_recup_588:.2f} €")
+            st.caption("*Nota: La retención ya está calculada aplicando automáticamente el tope máximo legal del 15% para países como Alemania o Francia.*")
+            st.markdown("---")
+            # ----------------------------------------------------
+
             df_informe = pd.DataFrame(datos_informe)
             
             columnas_ordenadas = ["Fecha Abono", "ISIN", "Concepto", "Importe Neto (€)", "Retención en origen (€)", 
@@ -516,6 +543,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
             st.dataframe(df_informe)
             csv_informe = df_informe.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel (Formato AEAT)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
+
 
 
 # ==========================================
