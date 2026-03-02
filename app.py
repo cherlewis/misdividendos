@@ -357,7 +357,7 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
     def formato_hacienda(val):
         return f"{euro_a_numero(val):.2f}"
         
-def obtener_bandera(isin, empresa):
+    def obtener_bandera(isin, empresa):
         if isinstance(isin, str) and len(isin) >= 2 and isin != "ISIN no encontrado":
             prefijo = isin[:2].upper()
             banderas = {
@@ -372,7 +372,7 @@ def obtener_bandera(isin, empresa):
         
         empresa_mayus = str(empresa).upper()
         
-        # 📚 DICCIONARIO INFALIBLE (Añade aquí las empresas que quieras en el futuro)
+        # 📚 DICCIONARIO INFALIBLE 
         conocidas = {
             "BASF": "🇩🇪 Alemania", "ALLIANZ": "🇩🇪 Alemania",
             "LOUIS VUITTON": "🇫🇷 Francia", "LVMH": "🇫🇷 Francia",
@@ -383,8 +383,6 @@ def obtener_bandera(isin, empresa):
             "REALTY INCOME": "🇺🇸 USA", "W.P. CAREY": "🇺🇸 USA",
             "AMERICAN TOWER": "🇺🇸 USA", "VERIZON": "🇺🇸 USA",
             "INTEL": "🇺🇸 USA", "PHILIP MORRIS": "🇺🇸 USA",
-            
-            # 🇬🇧 Nuevas empresas británicas añadidas:
             "BRITISH AMERICAN": "🇬🇧 Reino Unido",
             "VODAFONE": "🇬🇧 Reino Unido",
             "ASSOCIATED BRITISH": "🇬🇧 Reino Unido",
