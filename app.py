@@ -91,6 +91,7 @@ opcion = st.sidebar.radio(
 st.sidebar.markdown("---")
 st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
 
+
 # ==========================================
 # 🚀 APLICACIÓN 1: DIVIDENDOS Y DASHBOARD
 # ==========================================
@@ -162,6 +163,7 @@ if opcion == "📊 Dividendos a Excel":
             df['num_neto'] = df['Importe Neto (€)'].apply(euro_a_numero)
             df['num_ret_origen'] = df['Retención en origen (€)'].apply(euro_a_numero)
             df['num_ret_destino'] = df['Retención en destino (€)'].apply(euro_a_numero)
+            df['num_ret_recup'] = df['Retención Recuperable (Max 15%) (€)'].apply(euro_a_numero) # Añadido para sumar recuperable
             
             total_bruto = df['num_bruto'].sum()
             total_impuestos = df['num_ret_origen'].sum() + df['num_ret_destino'].sum()
@@ -187,9 +189,12 @@ if opcion == "📊 Dividendos a Excel":
                     st.markdown(f"**{grupo}**")
                     st.write(f"💰 Bruto Total: **{formatear_moneda(df_grupo['num_bruto'].sum())}**")
                     st.write(f"🏛️ Ret. en Origen Total: **{formatear_moneda(df_grupo['num_ret_origen'].sum())}**")
+                    # NUEVO: Si es el grupo extranjero, mostramos la retención recuperable
+                    if "Extranjero" in grupo:
+                        st.write(f"🔄 Ret. Recuperable (Máx 15%): **{formatear_moneda(df_grupo['num_ret_recup'].sum())}**")
                     
             st.markdown("---")
-            df = df.drop(columns=['num_bruto', 'num_neto', 'num_ret_origen', 'num_ret_destino', 'Grupo_Pais'])
+            df = df.drop(columns=['num_bruto', 'num_neto', 'num_ret_origen', 'num_ret_destino', 'Grupo_Pais', 'num_ret_recup'])
             
             fila_totales = {col: "" for col in df.columns}
             fila_totales["Fecha Abono"] = "TOTALES"
@@ -204,6 +209,9 @@ if opcion == "📊 Dividendos a Excel":
             st.dataframe(df)
             csv = df.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel (.csv)", data=csv, file_name='dividendos.csv', mime='text/csv')
+
+
+
 
 # ==========================================
 # 🚀 APLICACIÓN 2: COMPRAS Y VENTAS
