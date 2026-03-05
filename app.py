@@ -783,6 +783,7 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
 
 
 
+
 # ==========================================
 # 🚀 APLICACIÓN 7: GESTOR DE EMPRESAS (SUPABASE)
 # ==========================================
@@ -800,9 +801,9 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
         st.error(f"⚠️ Error de conexión: {e}")
         st.stop()
 
-    # 2. Función para leer los datos
+    # 2. Función para leer los datos (AQUÍ CAMBIAMOS A NombreING)
     def cargar_empresas():
-        respuesta = supabase.table("Empresas_Table").select("*").order("Nombre").execute()
+        respuesta = supabase.table("Empresas_Table").select("*").order("NombreING").execute()
         return pd.DataFrame(respuesta.data)
 
     df_empresas = cargar_empresas()
@@ -817,7 +818,7 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
             col1, col2 = st.columns(2)
             with col1:
                 isin_add = st.text_input("ISIN (ej. US7134481081)")
-                nombre_add = st.text_input("Nombre (ej. PEPSICO)")
+                nombre_add = st.text_input("Nombre en ING (ej. PEPSICO)")
                 nombre_hac_add = st.text_input("Nombre en Hacienda (ej. CODIGO: US7134481081)")
             with col2:
                 pais_add = st.text_input("País (ej. 🇺🇸 USA)")
@@ -828,27 +829,32 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
             if submit_add:
                 if nombre_add and isin_add:
                     nueva_empresa = {
-                        "ISIN": isin_add, "Nombre": nombre_add, "NombreHacienda": nombre_hac_add,
-                        "Pais": pais_add, "Sector": sector_add, "Subsector": subsector_add
+                        "ISIN": isin_add, 
+                        "NombreING": nombre_add, # <-- ACTULIZADO AQUÍ
+                        "NombreHacienda": nombre_hac_add,
+                        "Pais": pais_add, 
+                        "Sector": sector_add, 
+                        "Subsector": subsector_add
                     }
                     supabase.table("Empresas_Table").insert(nueva_empresa).execute()
                     st.success(f"✅ ¡{nombre_add} guardada correctamente!")
                     st.rerun()
                 else:
-                    st.warning("⚠️ El Nombre y el ISIN son obligatorios.")
+                    st.warning("⚠️ El Nombre en ING y el ISIN son obligatorios.")
 
     # --- PESTAÑA 2: EDITAR ---
     with tab2:
         st.subheader("Editar datos de una empresa")
         if not df_empresas.empty:
-            empresa_seleccionada = st.selectbox("Selecciona la empresa:", df_empresas['Nombre'].tolist())
-            datos_actuales = df_empresas[df_empresas['Nombre'] == empresa_seleccionada].iloc[0]
+            # Buscamos por la columna NombreING
+            empresa_seleccionada = st.selectbox("Selecciona la empresa:", df_empresas['NombreING'].tolist())
+            datos_actuales = df_empresas[df_empresas['NombreING'] == empresa_seleccionada].iloc[0]
 
             with st.form("form_edit"):
                 col1, col2 = st.columns(2)
                 with col1:
                     isin_ed = st.text_input("ISIN", value=datos_actuales.get('ISIN', ''))
-                    nombre_ed = st.text_input("Nombre", value=datos_actuales.get('Nombre', ''))
+                    nombre_ed = st.text_input("Nombre en ING", value=datos_actuales.get('NombreING', '')) # <-- ACTULIZADO AQUÍ
                     nombre_hac_ed = st.text_input("Nombre en Hacienda", value=datos_actuales.get('NombreHacienda', '') or '')
                 with col2:
                     pais_ed = st.text_input("País", value=datos_actuales.get('Pais', '') or '')
@@ -858,8 +864,12 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                 submit_edit = st.form_submit_button("🔄 Actualizar Cambios")
                 if submit_edit:
                     cambios = {
-                        "ISIN": isin_ed, "Nombre": nombre_ed, "NombreHacienda": nombre_hac_ed,
-                        "Pais": pais_ed, "Sector": sector_ed, "Subsector": subsector_ed
+                        "ISIN": isin_ed, 
+                        "NombreING": nombre_ed, # <-- ACTULIZADO AQUÍ
+                        "NombreHacienda": nombre_hac_ed,
+                        "Pais": pais_ed, 
+                        "Sector": sector_ed, 
+                        "Subsector": subsector_ed
                     }
                     supabase.table("Empresas_Table").update(cambios).eq("id", str(datos_actuales['id'])).execute()
                     st.success(f"✅ ¡Datos de {nombre_ed} actualizados!")
@@ -871,7 +881,8 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
     with tab3:
         st.subheader("Base de Datos Actual")
         if not df_empresas.empty:
-            columnas_mostrar = ["ISIN", "Nombre", "Pais", "Sector", "Subsector", "NombreHacienda"]
+            # Actualizamos la vista de la tabla
+            columnas_mostrar = ["ISIN", "NombreING", "Pais", "Sector", "Subsector", "NombreHacienda"]
             st.dataframe(df_empresas[columnas_mostrar], use_container_width=True)
             st.metric("Total de Empresas", len(df_empresas))
         else:
@@ -885,7 +896,8 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
             st.subheader("📤 Copia de Seguridad")
             st.write("Descarga todas tus empresas en formato Excel/CSV.")
             if not df_empresas.empty:
-                columnas_export = ["ISIN", "Nombre", "NombreHacienda", "Pais", "Sector", "Subsector"]
+                # Actualizamos la exportación
+                columnas_export = ["ISIN", "NombreING", "NombreHacienda", "Pais", "Sector", "Subsector"]
                 csv_export = df_empresas[columnas_export].to_csv(index=False, sep=";").encode('utf-8-sig')
                 st.download_button(label="⬇️ Descargar CSV", data=csv_export, file_name="BaseDatos_Empresas.csv", mime="text/csv")
             else:
@@ -893,24 +905,21 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                 
         with col_imp:
             st.subheader("📥 Carga Masiva")
-            st.write("Sube un CSV. **Obligatorio:** Los títulos de las columnas deben ser exactamente: `ISIN`, `Nombre`, `NombreHacienda`, `Pais`, `Sector`, `Subsector`.")
+            st.write("Sube un CSV. **Obligatorio:** Los títulos de las columnas deben ser exactamente: `ISIN`, `NombreING`, `NombreHacienda`, `Pais`, `Sector`, `Subsector`.")
             archivo_csv = st.file_uploader("Sube tu archivo CSV", type=["csv"])
             
             if archivo_csv:
                 try:
-                    df_import = pd.read_csv(archivo_csv, sep=None, engine='python') # Detecta auto si es , o ;
-                    # Limpiamos los datos vacíos (NaN) por textos en blanco para que Supabase no se queje
+                    df_import = pd.read_csv(archivo_csv, sep=None, engine='python')
                     df_import = df_import.fillna("") 
                     
                     st.write(f"📊 Detectadas {len(df_import)} filas. Vista previa:")
                     st.dataframe(df_import.head(3))
                     
                     if st.button("🚀 Confirmar e Importar a Base de Datos"):
-                        # Convertimos el DataFrame a una lista de diccionarios
                         registros = df_import.to_dict(orient="records")
-                        # Hacemos una inserción masiva en Supabase
                         supabase.table("Empresas_Table").insert(registros).execute()
                         st.success(f"✅ ¡{len(registros)} empresas importadas con éxito!")
                         st.rerun()
                 except Exception as e:
-                    st.error(f"❌ Error al leer el archivo o importar: Verifica que las columnas se llamen exactamente igual. Detalles: {e}")
+                    st.error(f"❌ Error al leer el archivo. Verifica que las columnas se llamen exactamente igual. Detalles: {e}")
