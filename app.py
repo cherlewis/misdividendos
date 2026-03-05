@@ -786,6 +786,17 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
 # ==========================================
 # 🚀 APLICACIÓN 7: GESTOR DE EMPRESAS (SUPABASE)
 # ==========================================
+    # 1. Intentamos conectar a Supabase
+    try:
+        from supabase import create_client, Client
+        url: str = st.secrets["SUPABASE_URL"]
+        key: str = st.secrets["SUPABASE_KEY"]
+        supabase: Client = create_client(url, key)
+    except Exception as e:
+        st.error(f"⚠️ Error técnico real: {e}")
+        st.stop()
+
+
 elif opcion == "🏢 Gestor de Empresas (DB)":
     st.title("🏢 Gestor de Base de Datos de Empresas")
     st.write("Conectado a tu base de datos Supabase en tiempo real.")
