@@ -786,45 +786,33 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
 # ==========================================
 # 🚀 APLICACIÓN 7: GESTOR DE EMPRESAS (SUPABASE)
 # ==========================================
-    # 1. Intentamos conectar a Supabase
-    try:
-        from supabase import create_client, Client
-        url: str = st.secrets["SUPABASE_URL"]
-        key: str = st.secrets["SUPABASE_KEY"]
-        supabase: Client = create_client(url, key)
-    except Exception as e:
-        st.error(f"⚠️ Error técnico real: {e}")
-        st.stop()
-
-
 elif opcion == "🏢 Gestor de Empresas (DB)":
     st.title("🏢 Gestor de Base de Datos de Empresas")
     st.write("Conectado a tu base de datos Supabase en tiempo real.")
 
-    # 1. Intentamos conectar a Supabase
+    # 1. Conexión limpia a Supabase
     try:
         from supabase import create_client, Client
         url: str = st.secrets["SUPABASE_URL"]
         key: str = st.secrets["SUPABASE_KEY"]
         supabase: Client = create_client(url, key)
     except Exception as e:
-        st.error("⚠️ No se ha podido conectar a Supabase. ¿Has configurado los Secrets en Streamlit?")
+        st.error(f"⚠️ Error de conexión: {e}")
         st.stop()
 
-    # 2. Función para leer los datos de la tabla
+    # 2. Función para leer los datos
     def cargar_empresas():
-        # Traemos todas las filas ordenadas por nombre
         respuesta = supabase.table("Empresas_Table").select("*").order("Nombre").execute()
         return pd.DataFrame(respuesta.data)
 
     df_empresas = cargar_empresas()
 
-    # 3. Interfaz con Pestañas (Tabs) para que quede muy limpio
-    tab1, tab2, tab3 = st.tabs(["➕ Añadir Nueva", "✏️ Editar Existente", "📋 Ver Tabla Completa"])
+    # 3. Interfaz con 4 Pestañas
+    tab1, tab2, tab3, tab4 = st.tabs(["➕ Añadir", "✏️ Editar", "📋 Ver Tabla", "🔄 Importar / Exportar"])
 
     # --- PESTAÑA 1: AÑADIR ---
     with tab1:
-        st.subheader("Añadir una nueva empresa a la Base de Datos")
+        st.subheader("Añadir una nueva empresa")
         with st.form("form_add", clear_on_submit=True):
             col1, col2 = st.columns(2)
             with col1:
@@ -832,7 +820,7 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                 nombre_add = st.text_input("Nombre (ej. PEPSICO)")
                 nombre_hac_add = st.text_input("Nombre en Hacienda (ej. CODIGO: US7134481081)")
             with col2:
-                pais_add = st.text_input("País (ej. USA)")
+                pais_add = st.text_input("País (ej. 🇺🇸 USA)")
                 sector_add = st.text_input("Sector (ej. Consumo Defensivo)")
                 subsector_add = st.text_input("Subsector (ej. Bebidas)")
 
@@ -840,17 +828,12 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
             if submit_add:
                 if nombre_add and isin_add:
                     nueva_empresa = {
-                        "ISIN": isin_add, 
-                        "Nombre": nombre_add, 
-                        "NombreHacienda": nombre_hac_add,
-                        "Pais": pais_add, 
-                        "Sector": sector_add, 
-                        "Subsector": subsector_add
+                        "ISIN": isin_add, "Nombre": nombre_add, "NombreHacienda": nombre_hac_add,
+                        "Pais": pais_add, "Sector": sector_add, "Subsector": subsector_add
                     }
-                    # Insertamos en la tabla
                     supabase.table("Empresas_Table").insert(nueva_empresa).execute()
-                    st.success(f"✅ ¡{nombre_add} guardada correctamente en la nube!")
-                    st.rerun() # Recarga la página para actualizar los datos
+                    st.success(f"✅ ¡{nombre_add} guardada correctamente!")
+                    st.rerun()
                 else:
                     st.warning("⚠️ El Nombre y el ISIN son obligatorios.")
 
@@ -858,14 +841,10 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
     with tab2:
         st.subheader("Editar datos de una empresa")
         if not df_empresas.empty:
-            # Seleccionable para buscar la empresa
-            empresa_seleccionada = st.selectbox("Selecciona la empresa a editar:", df_empresas['Nombre'].tolist())
-            
-            # Sacamos los datos actuales de esa empresa para rellenar el formulario
+            empresa_seleccionada = st.selectbox("Selecciona la empresa:", df_empresas['Nombre'].tolist())
             datos_actuales = df_empresas[df_empresas['Nombre'] == empresa_seleccionada].iloc[0]
 
             with st.form("form_edit"):
-                st.info(f"Modificando los datos de: **{empresa_seleccionada}**")
                 col1, col2 = st.columns(2)
                 with col1:
                     isin_ed = st.text_input("ISIN", value=datos_actuales.get('ISIN', ''))
@@ -879,28 +858,59 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                 submit_edit = st.form_submit_button("🔄 Actualizar Cambios")
                 if submit_edit:
                     cambios = {
-                        "ISIN": isin_ed, 
-                        "Nombre": nombre_ed, 
-                        "NombreHacienda": nombre_hac_ed,
-                        "Pais": pais_ed, 
-                        "Sector": sector_ed, 
-                        "Subsector": subsector_ed
+                        "ISIN": isin_ed, "Nombre": nombre_ed, "NombreHacienda": nombre_hac_ed,
+                        "Pais": pais_ed, "Sector": sector_ed, "Subsector": subsector_ed
                     }
-                    # Actualizamos usando el ID único de la fila
                     supabase.table("Empresas_Table").update(cambios).eq("id", str(datos_actuales['id'])).execute()
                     st.success(f"✅ ¡Datos de {nombre_ed} actualizados!")
                     st.rerun()
         else:
-            st.info("No hay empresas en la base de datos todavía. Ve a la pestaña 'Añadir Nueva'.")
+            st.info("No hay empresas en la base de datos todavía.")
 
     # --- PESTAÑA 3: VER TABLA ---
     with tab3:
         st.subheader("Base de Datos Actual")
         if not df_empresas.empty:
-            # Ocultamos columnas técnicas (id, created_at) para que se vea más limpio
             columnas_mostrar = ["ISIN", "Nombre", "Pais", "Sector", "Subsector", "NombreHacienda"]
             st.dataframe(df_empresas[columnas_mostrar], use_container_width=True)
-            
-            st.metric("Total de Empresas Registradas", len(df_empresas))
+            st.metric("Total de Empresas", len(df_empresas))
         else:
             st.write("La base de datos está vacía.")
+
+    # --- PESTAÑA 4: IMPORTAR / EXPORTAR ---
+    with tab4:
+        col_imp, col_exp = st.columns(2)
+        
+        with col_exp:
+            st.subheader("📤 Copia de Seguridad")
+            st.write("Descarga todas tus empresas en formato Excel/CSV.")
+            if not df_empresas.empty:
+                columnas_export = ["ISIN", "Nombre", "NombreHacienda", "Pais", "Sector", "Subsector"]
+                csv_export = df_empresas[columnas_export].to_csv(index=False, sep=";").encode('utf-8-sig')
+                st.download_button(label="⬇️ Descargar CSV", data=csv_export, file_name="BaseDatos_Empresas.csv", mime="text/csv")
+            else:
+                st.warning("No hay datos para exportar.")
+                
+        with col_imp:
+            st.subheader("📥 Carga Masiva")
+            st.write("Sube un CSV. **Obligatorio:** Los títulos de las columnas deben ser exactamente: `ISIN`, `Nombre`, `NombreHacienda`, `Pais`, `Sector`, `Subsector`.")
+            archivo_csv = st.file_uploader("Sube tu archivo CSV", type=["csv"])
+            
+            if archivo_csv:
+                try:
+                    df_import = pd.read_csv(archivo_csv, sep=None, engine='python') # Detecta auto si es , o ;
+                    # Limpiamos los datos vacíos (NaN) por textos en blanco para que Supabase no se queje
+                    df_import = df_import.fillna("") 
+                    
+                    st.write(f"📊 Detectadas {len(df_import)} filas. Vista previa:")
+                    st.dataframe(df_import.head(3))
+                    
+                    if st.button("🚀 Confirmar e Importar a Base de Datos"):
+                        # Convertimos el DataFrame a una lista de diccionarios
+                        registros = df_import.to_dict(orient="records")
+                        # Hacemos una inserción masiva en Supabase
+                        supabase.table("Empresas_Table").insert(registros).execute()
+                        st.success(f"✅ ¡{len(registros)} empresas importadas con éxito!")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error al leer el archivo o importar: Verifica que las columnas se llamen exactamente igual. Detalles: {e}")
