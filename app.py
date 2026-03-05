@@ -888,7 +888,8 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
         else:
             st.write("La base de datos está vacía.")
 
-    # --- PESTAÑA 4: IMPORTAR / EXPORTAR ---
+
+# --- PESTAÑA 4: IMPORTAR / EXPORTAR ---
     with tab4:
         col_imp, col_exp = st.columns(2)
         
@@ -896,7 +897,6 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
             st.subheader("📤 Copia de Seguridad")
             st.write("Descarga todas tus empresas en formato Excel/CSV.")
             if not df_empresas.empty:
-                # Actualizamos la exportación
                 columnas_export = ["ISIN", "NombreING", "NombreHacienda", "Pais", "Sector", "Subsector"]
                 csv_export = df_empresas[columnas_export].to_csv(index=False, sep=";").encode('utf-8-sig')
                 st.download_button(label="⬇️ Descargar CSV", data=csv_export, file_name="BaseDatos_Empresas.csv", mime="text/csv")
@@ -910,11 +910,14 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
             
             if archivo_csv:
                 try:
-                    df_import = pd.read_csv(archivo_csv, sep=None, engine='python')
+                    # 1. SOLUCIÓN AL FANTASMA: Añadimos encoding='utf-8-sig'
+                    df_import = pd.read_csv(archivo_csv, sep=None, engine='python', encoding='utf-8-sig')
                     df_import = df_import.fillna("") 
                     
-                    st.write(f"📊 Detectadas {len(df_import)} filas. Vista previa:")
-                    st.dataframe(df_import.head(3))
+                    st.write(f"📊 Detectadas {len(df_import)} filas. Aquí tienes todas:")
+                    
+                    # 2. SOLUCIÓN A LAS 3 FILAS: Quitamos el .head(3) para ver toda la tabla
+                    st.dataframe(df_import)
                     
                     if st.button("🚀 Confirmar e Importar a Base de Datos"):
                         registros = df_import.to_dict(orient="records")
@@ -923,3 +926,4 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                         st.rerun()
                 except Exception as e:
                     st.error(f"❌ Error al leer el archivo. Verifica que las columnas se llamen exactamente igual. Detalles: {e}")
+
