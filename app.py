@@ -70,6 +70,8 @@ def calcular_retencion_recuperable(pct_str, bruto_str, ret_o_str):
         return formato_numero_tabla(recuperable)
     return "0,00"
 
+
+
 # ==========================================
 # 🧭 MENÚ LATERAL
 # ==========================================
@@ -84,12 +86,16 @@ opcion = st.sidebar.radio(
         "🗂️ Renombrador de PDFs",
         "📄 Informe Fiscal (Div. y DRIPs)",
         "⚖️ Auditoría Hacienda vs ING",
-        "📉 Calculadora Plusvalías (Hacienda)"
+        "📉 Calculadora Plusvalías (Hacienda)",
+        "🏢 Gestor de Empresas (DB)"
     ]
 )
 
 st.sidebar.markdown("---")
 st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
+
+
+
 
 
 # ==========================================
