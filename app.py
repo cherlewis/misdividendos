@@ -78,9 +78,11 @@ def calcular_retencion_recuperable(pct_str, bruto_str, ret_o_str):
 st.sidebar.title("🛠️ Menú Principal")
 st.sidebar.write("Elige la herramienta que quieres usar:")
 
+
 opcion = st.sidebar.radio(
     "", 
     [
+        "📊 Cuadro de Mando (Dashboard)", # <--- Nueva pestaña estrella
         "📊 Dividendos a Excel", 
         "🛒 Compras/Ventas a Excel", 
         "🗂️ Renombrador de PDFs",
@@ -90,6 +92,8 @@ opcion = st.sidebar.radio(
         "🏢 Gestor de Empresas (DB)"
     ]
 )
+
+
 
 st.sidebar.markdown("---")
 st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
