@@ -352,8 +352,12 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                         "NombreHacienda", "Archivo"
                     ]
                     df_op = df_op[columnas_finales]
+            #    except Exception as e:
+            #        st.warning("No se ha podido conectar a la Base de Datos. Generando Excel básico...")
+
                 except Exception as e:
-                    st.warning("No se ha podido conectar a la Base de Datos. Generando Excel básico...")
+                    st.error(f"⚠️ Error técnico real del cruce: {e}")
+                    st.warning("Generando Excel básico...")
             # ==========================================
 
             st.success(f"¡Se procesaron y cruzaron {len(df_op)} archivo(s) con éxito!")
