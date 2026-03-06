@@ -904,35 +904,74 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                 st.warning("No hay datos para exportar.")
                 
         with col_imp:
-            st.subheader("📥 Carga Masiva")
-            st.write("Sube un CSV. **Obligatorio:** Los títulos de las columnas deben ser exactamente: `ISIN`, `NombreING`, `NombreHacienda`, `Pais`, `Sector`, `Subsector`.")
+            st.subheader("📥 Carga Masiva (Anti-Duplicados)")
+            st.write("Sube un CSV. **Obligatorio:** Las columnas deben ser exactamente: `ISIN`, `NombreING`, `NombreHacienda`, `Pais`, `Sector`, `Subsector`.")
             archivo_csv = st.file_uploader("Sube tu archivo CSV", type=["csv"])
             
             if archivo_csv:
                 try:
-                    # 1. SOLUCIÓN AL FANTASMA: Añadimos encoding='utf-8-sig'
                     df_import = pd.read_csv(archivo_csv, sep=None, engine='python', encoding='utf-8-sig')
                     df_import = df_import.fillna("") 
                     
                     st.write(f"📊 Detectadas {len(df_import)} filas. Aquí tienes todas:")
-                    
-                    # 2. SOLUCIÓN A LAS 3 FILAS: Quitamos el .head(3) para ver toda la tabla
                     st.dataframe(df_import)
                     
-                    if st.button("🚀 Confirmar e Importar a Base de Datos"):
-                        registros = df_import.to_dict(orient="records")
-                        supabase.table("Empresas_Table").insert(registros).execute()
-                        
-                        # Mostramos el mensaje exacto que querías
-                        st.success(f"✅ ¡Se han importado {len(registros)} registros correctamente!")
-                        
-                        # Hacemos una pausa de 3 segundos para que te dé tiempo a leerlo
-                        import time
-                        time.sleep(3)
-                        
-                        # Ahora sí, recargamos la página
-                        st.rerun()
-    
-                except Exception as e:
-                    st.error(f"❌ Error al leer el archivo. Verifica que las columnas se llamen exactamente igual. Detalles: {e}")
+                    if st.button("🚀 Confirmar e Importar / Actualizar"):
+                        # 1. Hacemos un "mapa" de las empresas que ya tienes (Nombre -> ID)
+                        if not df_empresas.empty:
+                            empresas_existentes = dict(zip(df_empresas['NombreING'], df_empresas['id']))
+                        else:
+                            empresas_existentes = {}
 
+                        registros_preparados = []
+                        nuevos = 0
+                        actualizados = 0
+
+                        for idx, row in df_import.iterrows():
+                            nombre = row.get('NombreING', '')
+                            registro = row.to_dict()
+                            
+                            # Quitamos la columna 'id' si por casualidad viene en el CSV
+                            registro.pop('id', None)
+
+                            # MAGIA ANTI-DUPLICADOS: Si la empresa ya está en la DB, le inyectamos su ID interno.
+                            # Al mandarle el ID, Supabase dice: "Ah, ya existe, la actualizo (Upsert)".
+                            if nombre in empresas_existentes:
+                                registro['id'] = int(empresas_existentes[nombre])
+                                actualizados += 1
+                            else:
+                                nuevos += 1
+                                
+                            registros_preparados.append(registro)
+
+                        # 2. Hacemos el Upsert masivo
+                        supabase.table("Empresas_Table").upsert(registros_preparados).execute()
+                        
+                        # 3. Mensaje chivato de éxito
+                        import time
+                        st.success(f"✅ ¡Proceso completado! Se han añadido {nuevos} nuevas empresas y se han actualizado {actualizados} que ya existían.")
+                        time.sleep(4) # Esperamos 4 segundos para que lo leas
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error al leer o importar. Detalles: {e}")
+
+        # ==========================================
+        # 🚨 ZONA DE PELIGRO: VACIAR BASE DE DATOS
+        # ==========================================
+        st.divider()
+        st.subheader("⚠️ Zona de Peligro")
+        with st.expander("Ver opciones para borrar la base de datos"):
+            st.warning("🚨 ¡ATENCIÓN! Si pulsas este botón, se borrarán absolutamente todos los registros de tu base de datos en la nube. Te recomendamos hacer una 'Copia de Seguridad' antes.")
+            
+            # Usamos type="primary" para que el botón salga en rojo/destacado
+            if st.button("🗑️ SÍ, BORRAR TODA LA BASE DE DATOS", type="primary"):
+                try:
+                    # Borramos todos los registros cuyo ID sea mayor a 0 (es decir, todos)
+                    supabase.table("Empresas_Table").delete().gt("id", 0).execute()
+                    
+                    import time
+                    st.success("✅ ¡Base de datos vaciada por completo!")
+                    time.sleep(3)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error al intentar borrar: {e}")
