@@ -96,6 +96,8 @@ st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
 
 
 
+
+
 # ==========================================
 # 🚀 APLICACIÓN 1: DIVIDENDOS
 # ==========================================
@@ -115,13 +117,12 @@ if opcion == "📊 Dividendos a Excel":
             try:
                 import pdfplumber
                 with pdfplumber.open(archivo) as pdf:
-                    # Usamos la misma lectura robusta que en las compras
                     texto = pdf.pages[0].extract_text(layout=True)
                     if not texto: texto = pdf.pages[0].extract_text()
                     
                     if texto:
                         empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Empresa")
-                        if empresa != "No encontrado":
+                        if empresa != "Empresa" and empresa != "No encontrado":
                             empresa = empresa.split("   ")[0].strip()
 
                         if "DERECHOS" in empresa.upper() or "ELEC." in empresa.upper():
@@ -131,17 +132,18 @@ if opcion == "📊 Dividendos a Excel":
                             if len(empresa_limpia) > 2:
                                 empresa = empresa_limpia
                             
-                        fecha_abono = buscar_dato([r"Fecha de abono:\s*(\d{2}/\d{2}/\d{4})", r"Fecha:\s*(\d{2}/\d{2}/\d{4})"], texto, "Fecha de abono")
-                        importe_bruto = buscar_dato([r"Importe bruto:\s*([\d,]+\s*[A-Z]{3})"], texto, "Importe Bruto")
-                        retencion_origen = buscar_dato([r"Retención en origen:\s*([\d,]+\s*[A-Z]{3})"], texto, "Ret. Origen", opcional=True)
-                        retencion_destino = buscar_dato([r"Retención en destino:\s*([\d,]+\s*[A-Z]{3})", r"Retención:\s*([\d,]+\s*[A-Z]{3})"], texto, "Ret. Destino")
-                        importe_neto = buscar_dato([r"Importe líquido:\s*([\d,]+\s*[A-Z]{3})", r"Importe neto:\s*([\d,]+\s*[A-Z]{3})"], texto, "Importe Líquido")
+                        # 🔧 CORRECCIÓN: Quitamos el 'opcional=True' que rompía el código y ponemos valores por defecto limpios
+                        fecha_abono = buscar_dato([r"Fecha de abono:\s*(\d{2}/\d{2}/\d{4})", r"Fecha:\s*(\d{2}/\d{2}/\d{4})"], texto, "00/00/0000")
+                        importe_bruto = buscar_dato([r"Importe bruto:\s*([\d,]+\s*[A-Z]{3})"], texto, "0,00 EUR")
+                        retencion_origen = buscar_dato([r"Retención en origen:\s*([\d,]+\s*[A-Z]{3})"], texto, "0,00 EUR")
+                        retencion_destino = buscar_dato([r"Retención en destino:\s*([\d,]+\s*[A-Z]{3})", r"Retención:\s*([\d,]+\s*[A-Z]{3})"], texto, "0,00 EUR")
+                        importe_neto = buscar_dato([r"Importe líquido:\s*([\d,]+\s*[A-Z]{3})", r"Importe neto:\s*([\d,]+\s*[A-Z]{3})"], texto, "0,00 EUR")
                         
-                        cambio_divisa = buscar_dato([r"Cambio:\s*([\d,]+)"], texto, "Divisa / Cambio", opcional=True)
-                        if cambio_divisa == "0,00 EUR":
+                        cambio_divisa = buscar_dato([r"Cambio:\s*([\d,]+)"], texto, "1,000")
+                        if cambio_divisa == "0,00 EUR" or cambio_divisa == "1,000":
                             cambio_divisa = "1,000"
                         
-                        titulos = buscar_dato([r"Nº de títulos:\s*([\d\.]+)"], texto, "Títulos")
+                        titulos = buscar_dato([r"Nº de títulos:\s*([\d\.]+)"], texto, "0")
 
                         datos_dividendos.append({
                             "Fecha": fecha_abono,
@@ -155,7 +157,6 @@ if opcion == "📊 Dividendos a Excel":
                             "Archivo": archivo.name
                         })
             except Exception as e:
-                # 🚨 CHIVATO ENCENDIDO: Ahora nos dirá el error exacto
                 st.error(f"⚠️ Error al leer el PDF '{archivo.name}': {e}")
             
             import gc
@@ -182,7 +183,6 @@ if opcion == "📊 Dividendos a Excel":
                     df_db = pd.DataFrame(respuesta.data)
                     
                     if not df_db.empty:
-                        # Convertimos a diccionario seguro (.to_dict()) como hicimos en compras
                         db_nombre = {str(row["NombreING"]).upper(): row.to_dict() for _, row in df_db.iterrows()}
                     else:
                         db_nombre = {}
@@ -251,7 +251,6 @@ if opcion == "📊 Dividendos a Excel":
             st.dataframe(df)
             csv = df.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv, file_name='dividendos_enriquecidos.csv', mime='text/csv')
-
 
 
 
