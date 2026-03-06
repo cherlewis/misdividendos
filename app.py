@@ -114,19 +114,21 @@ if opcion == "📄 Dividendos a Excel":
         for i, archivo in enumerate(archivos_pdf):
             texto_estado.text(f"⏳ Procesando ({i+1}/{total_archivos}): {archivo.name}...")
             try:
+                import pdfplumber
                 with pdfplumber.open(archivo) as pdf:
-                    texto = pdf.pages[0].extract_text()
+                    # Usamos la misma lectura robusta que en las compras
+                    texto = pdf.pages[0].extract_text(layout=True)
+                    if not texto: texto = pdf.pages[0].extract_text()
                     
                     if texto:
                         empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Empresa")
                         if empresa != "No encontrado":
                             empresa = empresa.split("   ")[0].strip()
 
-                        # Si es un "Dividendo Elección" (Scrip Dividend), lo limpiamos un poco
                         if "DERECHOS" in empresa.upper() or "ELEC." in empresa.upper():
+                            import re
                             empresa_limpia = re.sub(r'\(.*?\)', '', empresa)
                             empresa_limpia = empresa_limpia.replace("DERECHOS", "").replace("ELEC.", "").strip()
-                            # Si se queda muy corto, igual es mejor no tocarlo mucho
                             if len(empresa_limpia) > 2:
                                 empresa = empresa_limpia
                             
@@ -154,14 +156,17 @@ if opcion == "📄 Dividendos a Excel":
                             "Archivo": archivo.name
                         })
             except Exception as e:
-                st.warning(f"⚠️ Error al procesar '{archivo.name}'. Se ha omitido.")
+                # 🚨 CHIVATO ENCENDIDO: Ahora nos dirá el error exacto
+                st.error(f"⚠️ Error al leer el PDF '{archivo.name}': {e}")
             
+            import gc
             gc.collect()
             barra_progreso.progress((i + 1) / total_archivos)
 
         texto_estado.empty()
 
         if datos_dividendos:
+            import pandas as pd
             df = pd.DataFrame(datos_dividendos)
 
             # ==========================================
@@ -178,8 +183,7 @@ if opcion == "📄 Dividendos a Excel":
                     df_db = pd.DataFrame(respuesta.data)
                     
                     if not df_db.empty:
-                        # Diccionario de búsqueda por nombre (Ej: "COCA COLA CO": {diccionario_datos})
-                        # Guardamos los nombres de la BD en mayúsculas para que el cruce sea más fácil
+                        # Convertimos a diccionario seguro (.to_dict()) como hicimos en compras
                         db_nombre = {str(row["NombreING"]).upper(): row.to_dict() for _, row in df_db.iterrows()}
                     else:
                         db_nombre = {}
@@ -190,11 +194,9 @@ if opcion == "📄 Dividendos a Excel":
                         empresa_pdf = str(row["Empresa_PDF"]).upper().strip()
                         
                         match = None
-                        # Buscamos si el nombre del PDF (ej: "3M CO") está en nuestra Base de Datos
                         if empresa_pdf in db_nombre:
                             match = db_nombre[empresa_pdf]
                         else:
-                            # Búsqueda un poco más "flexible" (por si hay espacios extra)
                             for nombre_db, datos_db in db_nombre.items():
                                 if nombre_db in empresa_pdf or empresa_pdf in nombre_db:
                                     match = datos_db
@@ -222,7 +224,6 @@ if opcion == "📄 Dividendos a Excel":
                     df["NombreING"] = nombres_ing
                     df["NombreHacienda"] = nombres_hac
 
-                    # Reordenamos columnas para un Excel perfecto
                     columnas_finales = [
                         "Fecha", "NombreING", "ISIN", "Pais", "Sector", "Subsector", 
                         "Títulos", "Importe Bruto", "Ret. Origen", "Ret. Destino", 
@@ -230,7 +231,7 @@ if opcion == "📄 Dividendos a Excel":
                     ]
                     df = df[columnas_finales]
                 except Exception as e:
-                    st.error(f"⚠️ Error técnico real del cruce: {e}")
+                    st.error(f"⚠️ Error al cruzar con la Base de Datos: {e}")
                     st.warning("Generando Excel básico sin sectores...")
             # ==========================================
 
@@ -251,6 +252,8 @@ if opcion == "📄 Dividendos a Excel":
             st.dataframe(df)
             csv = df.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv, file_name='dividendos_enriquecidos.csv', mime='text/csv')
+
+
 
 
 
