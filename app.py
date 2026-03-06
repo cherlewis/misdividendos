@@ -922,8 +922,17 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                     if st.button("🚀 Confirmar e Importar a Base de Datos"):
                         registros = df_import.to_dict(orient="records")
                         supabase.table("Empresas_Table").insert(registros).execute()
-                        st.success(f"✅ ¡{len(registros)} empresas importadas con éxito!")
+                        
+                        # Mostramos el mensaje exacto que querías
+                        st.success(f"✅ ¡Se han importado {len(registros)} registros correctamente!")
+                        
+                        # Hacemos una pausa de 3 segundos para que te dé tiempo a leerlo
+                        import time
+                        time.sleep(3)
+                        
+                        # Ahora sí, recargamos la página
                         st.rerun()
+    
                 except Exception as e:
                     st.error(f"❌ Error al leer el archivo. Verifica que las columnas se llamen exactamente igual. Detalles: {e}")
 
