@@ -296,11 +296,12 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                     respuesta = supabase.table("Empresas_Table").select("ISIN, NombreING, Pais, Sector, Subsector, NombreHacienda").execute()
                     df_db = pd.DataFrame(respuesta.data)
                     
-                    # 🔧 SOLUCIÓN: Eliminamos los ISIN duplicados (o vacíos) a la hora de crear el diccionario de búsqueda
                     if not df_db.empty:
                         df_db_limpio = df_db.dropna(subset=['ISIN']).drop_duplicates(subset=['ISIN'])
                         db_isin = df_db_limpio.set_index("ISIN").to_dict("index")
-                        db_nombre = {str(row["NombreING"]).upper(): row for _, row in df_db.iterrows()}
+                        
+                        # 🔧 LA SOLUCIÓN: Añadimos .to_dict() para que Pandas no se vuelva loco al comprobar si existe
+                        db_nombre = {str(row["NombreING"]).upper(): row.to_dict() for _, row in df_db.iterrows()}
                     else:
                         db_isin = {}
                         db_nombre = {}
@@ -332,6 +333,7 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                         elif nombre_norm in db_nombre:
                             match = db_nombre[nombre_norm]
                             
+                        # Ahora 'match' siempre será un diccionario limpio, y el 'if' funcionará perfectamente
                         if match:
                             sectores.append(match.get("Sector", "Pendiente de Clasificar"))
                             subsectores.append(match.get("Subsector", "Pendiente de Clasificar"))
@@ -361,6 +363,7 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                 except Exception as e:
                     st.error(f"⚠️ Error técnico real del cruce: {e}")
                     st.warning("Generando Excel básico...")
+            # ==========================================
             # ==========================================
             # ==========================================
 
