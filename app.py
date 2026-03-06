@@ -118,36 +118,39 @@ if opcion == "📊 Dividendos a Excel":
             try:
                 import pdfplumber
                 with pdfplumber.open(archivo) as pdf:
+                    # Lectura limpia (sin layout=True para evitar fragmentación de números)
                     texto = pdf.pages[0].extract_text()
                     
                     if texto:
-                        # 1. EMPRESA: Mantenemos tu lógica que ya funcionaba
-                        empresa = buscar_dato([r"Valor\s*[:\s]+(.+?)(?=\s{2,}|\n|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Empresa")
+                        # 1. BUSCAR EMPRESA: Lógica simplificada y arreglada (con paréntesis para capturar)
+                        empresa = buscar_dato([r"Valor\s*[:\-]?\s*(.+?)(?:\s{2,}|\n|$)", r"(REALTY INCOME.*|VIDRALA.*)"], texto, "Empresa")
                         if empresa != "Empresa" and empresa != "No encontrado":
                             empresa = empresa.split("   ")[0].strip()
 
+                        # Limpieza de Scrip Dividend
                         if "DERECHOS" in empresa.upper() or "ELEC." in empresa.upper():
                             import re
                             empresa_limpia = re.sub(r'\(.*?\)', '', empresa)
-                            empresa_limpia = empresa_limpia.replace("DERECHOS", "").replace("ELEC.", "").strip()
+                            empresa_limpia = empresa_limpia.replace("DERECHOS", "").replace("ELEC.", "").replace("ELEC", "").strip()
                             if len(empresa_limpia) > 2:
                                 empresa = empresa_limpia
                             
-                        # 2. FECHA: Ahora acepta 'Fecha de abono' o 'Fecha', con o sin ':'
-                        fecha_abono = buscar_dato([r"(?:Fecha de abono|Fecha)\s*[:\s]+(\d{2}/\d{2}/\d{4})"], texto, "00/00/0000")
+                        # 2. BUSCAR FECHA: Acepta "Fecha de abono" o "Fecha", con o sin ":"
+                        fecha_abono = buscar_dato([r"(?:Fecha de abono|Fecha)\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})"], texto, "00/00/0000")
                         
-                        # 3. IMPORTES: Llave maestra para capturar números con puntos, comas y cualquier divisa
-                        importes_re = r"[:\s]+([\d\.,]+\s*[A-Z]{3})"
-                        importe_bruto = buscar_dato([r"Importe\s+bruto" + importes_re], texto, "0,00 EUR")
-                        retencion_origen = buscar_dato([r"Retención\s+en\s+origen" + importes_re], texto, "0,00 EUR")
-                        retencion_destino = buscar_dato([r"Retención\s+(?:en\s+destino|:)" + importes_re], texto, "0,00 EUR")
-                        importe_neto = buscar_dato([r"Importe\s+(?:líquido|neto)" + importes_re], texto, "0,00 EUR")
+                        # 3. BUSCAR IMPORTES: Captura números con puntos de miles, comas y divisa
+                        # Usamos una fórmula que busca la etiqueta y luego el primer número con moneda que encuentre cerca
+                        patron_num = r"[:\- \t]+([\d\.,]+\s*[A-Z€]{1,3})"
+                        importe_bruto = buscar_dato([r"Importe\s+bruto" + patron_num], texto, "0,00 EUR")
+                        retencion_origen = buscar_dato([r"Retención\s+en\s+origen" + patron_num], texto, "0,00 EUR")
+                        retencion_destino = buscar_dato([r"Retención\s+(?:en\s+destino|:)" + patron_num], texto, "0,00 EUR")
+                        importe_neto = buscar_dato([r"Importe\s+(?:líquido|neto)" + patron_num], texto, "0,00 EUR")
                         
-                        cambio_divisa = buscar_dato([r"Cambio\s*[:\s]+([\d\.,]+)"], texto, "1,000")
-                        if cambio_divisa in ["0,00 EUR", "1,000", "0,00"]:
+                        cambio_divisa = buscar_dato([r"Cambio\s*[:\-]?\s*([\d\.,]+)"], texto, "1,000")
+                        if cambio_divisa in ["0,00 EUR", "1,000", "0,00", ""]:
                             cambio_divisa = "1,000"
                         
-                        titulos = buscar_dato([r"Nº\s+de\s+títulos\s*[:\s]+([\d\.,]+)"], texto, "0")
+                        titulos = buscar_dato([r"Nº\s+de\s+títulos\s*[:\-]?\s*([\d\.,]+)"], texto, "0")
 
                         datos_dividendos.append({
                             "Fecha": fecha_abono,
@@ -161,7 +164,7 @@ if opcion == "📊 Dividendos a Excel":
                             "Archivo": archivo.name
                         })
             except Exception as e:
-                st.error(f"⚠️ Error al leer el PDF '{archivo.name}': {e}")
+                st.error(f"⚠️ Error al leer '{archivo.name}': {e}")
             
             import gc
             gc.collect()
@@ -174,9 +177,9 @@ if opcion == "📊 Dividendos a Excel":
             df = pd.DataFrame(datos_dividendos)
 
             # ==========================================
-            # 🧠 CRUCE CON BASE DE DATOS
+            # 🧠 CRUCE CON BASE DE DATOS (POR NOMBRE)
             # ==========================================
-            with st.spinner("🧠 Cruzando dividendos con tu Base de Datos..."):
+            with st.spinner("🧠 Cruzando datos con tu Base de Datos..."):
                 try:
                     from supabase import create_client, Client
                     url: str = st.secrets["SUPABASE_URL"]
@@ -187,22 +190,26 @@ if opcion == "📊 Dividendos a Excel":
                     df_db = pd.DataFrame(respuesta.data)
                     
                     if not df_db.empty:
-                        db_nombre = {str(row["NombreING"]).upper(): row.to_dict() for _, row in df_db.iterrows()}
+                        db_nombre = {str(row["NombreING"]).upper().strip(): row.to_dict() for _, row in df_db.iterrows()}
                     else:
                         db_nombre = {}
 
                     sectores, subsectores, paises, nombres_ing, nombres_hac, isins = [], [], [], [], [], []
 
                     for _, row in df.iterrows():
-                        empresa_pdf = str(row["Empresa_PDF"]).upper().strip()
+                        emp_pdf = str(row["Empresa_PDF"]).upper().strip()
                         match = None
-                        if empresa_pdf in db_nombre:
-                            match = db_nombre[empresa_pdf]
+                        
+                        # Plan A: Coincidencia exacta
+                        if emp_pdf in db_nombre:
+                            match = db_nombre[emp_pdf]
                         else:
+                            # Plan B: Coincidencia flexible
                             for nombre_db, datos_db in db_nombre.items():
-                                if nombre_db in empresa_pdf or empresa_pdf in nombre_db:
+                                if nombre_db in emp_pdf or emp_pdf in nombre_db:
                                     match = datos_db
                                     break
+                            
                         if match:
                             sectores.append(match.get("Sector", "Pendiente"))
                             subsectores.append(match.get("Subsector", "Pendiente"))
@@ -225,33 +232,28 @@ if opcion == "📊 Dividendos a Excel":
                     df["NombreING"] = nombres_ing
                     df["NombreHacienda"] = nombres_hac
 
-                    columnas_finales = [
-                        "Fecha", "NombreING", "ISIN", "Pais", "Sector", "Subsector", 
-                        "Títulos", "Importe Bruto", "Ret. Origen", "Ret. Destino", 
-                        "Importe Neto", "Divisa / Cambio", "NombreHacienda", "Archivo"
-                    ]
+                    columnas_finales = ["Fecha", "NombreING", "ISIN", "Pais", "Sector", "Subsector", "Títulos", "Importe Bruto", "Ret. Origen", "Ret. Destino", "Importe Neto", "Divisa / Cambio", "NombreHacienda", "Archivo"]
                     df = df[columnas_finales]
                 except Exception as e:
-                    st.error(f"⚠️ Error al cruzar con la Base de Datos: {e}")
+                    st.error(f"⚠️ Error al cruzar datos: {e}")
 
             st.success(f"¡Se procesaron {len(df)} archivo(s) con éxito!")
 
             df['Fecha_Temporal'] = pd.to_datetime(df['Fecha'], format='%d/%m/%Y', errors='coerce')
             df = df.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
 
+            # Totales
             fila_totales = {col: "" for col in df.columns}
             fila_totales["Fecha"] = "TOTALES"
-            cols_a_sumar = ["Importe Bruto", "Ret. Origen", "Ret. Destino", "Importe Neto"]
-            for col in cols_a_sumar:
+            cols_sum = ["Importe Bruto", "Ret. Origen", "Ret. Destino", "Importe Neto"]
+            for col in cols_sum:
                 suma = df[col].apply(lambda x: euro_a_numero(str(x)) if pd.notnull(x) and x != "" and str(x) != "0,00 EUR" else 0).sum()
                 fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
             
             df = pd.concat([df, pd.DataFrame([fila_totales])], ignore_index=True)
-
             st.dataframe(df)
             csv = df.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv, file_name='dividendos_enriquecidos.csv', mime='text/csv')
-
 
 
 
