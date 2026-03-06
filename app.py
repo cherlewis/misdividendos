@@ -1305,6 +1305,8 @@ elif opcion == "💸 Asistente de Renta Web":
                 """)
 
 
+
+
 # ==========================================
 # 🚀 APLICACIÓN 9: AUDITORÍA PRO (DB)
 # ==========================================
@@ -1312,10 +1314,16 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
     st.title("⚖️ Auditoría Fiscal Profesional (Base de Datos)")
     st.write("Cruza los datos oficiales de Hacienda con tus registros de ING y guarda el resultado.")
 
-    # Conexión a Supabase
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    supabase = create_client(url, key)
+    # Conexión Segura a Supabase
+    try:
+        from supabase import create_client, Client
+        url: str = st.secrets["SUPABASE_URL"]
+        key: str = st.secrets["SUPABASE_KEY"]
+        supabase: Client = create_client(url, key)
+    except Exception as e:
+        st.error(f"⚠️ Error de conexión a la base de datos: {e}")
+        st.stop()
+
 
     col1, col2 = st.columns(2)
     with col1:
