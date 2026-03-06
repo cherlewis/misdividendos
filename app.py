@@ -97,6 +97,7 @@ st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
 
 
 
+
 # ==========================================
 # 🚀 APLICACIÓN 1: DIVIDENDOS
 # ==========================================
@@ -110,17 +111,21 @@ if opcion == "📊 Dividendos a Excel":
         total_archivos = len(archivos_pdf)
         barra_progreso = st.progress(0)
         texto_estado = st.empty()
+        
+        # Guardaremos el texto del último PDF por si necesitas depurar
+        ultimo_texto_leido = "" 
 
         for i, archivo in enumerate(archivos_pdf):
             texto_estado.text(f"⏳ Procesando ({i+1}/{total_archivos}): {archivo.name}...")
             try:
                 import pdfplumber
                 with pdfplumber.open(archivo) as pdf:
-                    # 🔧 CORRECCIÓN: Quitamos el layout=True. Para los dividendos la lectura estándar es mucho mejor.
                     texto = pdf.pages[0].extract_text()
-                    
                     if texto:
-                        empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Empresa")
+                        ultimo_texto_leido = texto
+                        
+                        # Buscamos la empresa con mucha flexibilidad
+                        empresa = buscar_dato([r"Valor[:\s]*(.+?)(?=\s{2,}|\n|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Empresa")
                         if empresa != "Empresa" and empresa != "No encontrado":
                             empresa = empresa.split("   ")[0].strip()
 
@@ -131,17 +136,18 @@ if opcion == "📊 Dividendos a Excel":
                             if len(empresa_limpia) > 2:
                                 empresa = empresa_limpia
                             
-                        fecha_abono = buscar_dato([r"Fecha de abono:\s*(\d{2}/\d{2}/\d{4})", r"Fecha:\s*(\d{2}/\d{2}/\d{4})"], texto, "00/00/0000")
-                        importe_bruto = buscar_dato([r"Importe bruto:\s*([\d,]+\s*[A-Z]{3})"], texto, "0,00 EUR")
-                        retencion_origen = buscar_dato([r"Retención en origen:\s*([\d,]+\s*[A-Z]{3})"], texto, "0,00 EUR")
-                        retencion_destino = buscar_dato([r"Retención en destino:\s*([\d,]+\s*[A-Z]{3})", r"Retención:\s*([\d,]+\s*[A-Z]{3})"], texto, "0,00 EUR")
-                        importe_neto = buscar_dato([r"Importe líquido:\s*([\d,]+\s*[A-Z]{3})", r"Importe neto:\s*([\d,]+\s*[A-Z]{3})"], texto, "0,00 EUR")
+                        # 🔧 CERRADURAS DE TITANIO: Aceptan puntos, comas, espacios raros y divisas opcionales
+                        fecha_abono = buscar_dato([r"Fecha de abono[:\s]*(\d{2}/\d{2}/\d{4})", r"Fecha[:\s]*(\d{2}/\d{2}/\d{4})"], texto, "00/00/0000")
+                        importe_bruto = buscar_dato([r"Importe bruto[:\s]*([\d\.,]+(?:\s*[A-Za-z€]{1,3})?)"], texto, "0,00 EUR")
+                        retencion_origen = buscar_dato([r"Retención en origen[:\s]*([\d\.,]+(?:\s*[A-Za-z€]{1,3})?)"], texto, "0,00 EUR")
+                        retencion_destino = buscar_dato([r"Retención en destino[:\s]*([\d\.,]+(?:\s*[A-Za-z€]{1,3})?)", r"Retención[:\s]*([\d\.,]+(?:\s*[A-Za-z€]{1,3})?)"], texto, "0,00 EUR")
+                        importe_neto = buscar_dato([r"Importe líquido[:\s]*([\d\.,]+(?:\s*[A-Za-z€]{1,3})?)", r"Importe neto[:\s]*([\d\.,]+(?:\s*[A-Za-z€]{1,3})?)"], texto, "0,00 EUR")
                         
-                        cambio_divisa = buscar_dato([r"Cambio:\s*([\d,]+)"], texto, "1,000")
-                        if cambio_divisa == "0,00 EUR" or cambio_divisa == "1,000":
+                        cambio_divisa = buscar_dato([r"Cambio[:\s]*([\d\.,]+)"], texto, "1,000")
+                        if cambio_divisa in ["0,00 EUR", "1,000", "0,00"]:
                             cambio_divisa = "1,000"
                         
-                        titulos = buscar_dato([r"Nº de títulos:\s*([\d\.]+)"], texto, "0")
+                        titulos = buscar_dato([r"Nº de títulos[:\s]*([\d\.,]+)"], texto, "0")
 
                         datos_dividendos.append({
                             "Fecha": fecha_abono,
@@ -241,7 +247,7 @@ if opcion == "📊 Dividendos a Excel":
             fila_totales["Fecha"] = "TOTALES"
             cols_a_sumar = ["Importe Bruto", "Ret. Origen", "Ret. Destino", "Importe Neto"]
             for col in cols_a_sumar:
-                suma = df[col].apply(lambda x: euro_a_numero(str(x)) if pd.notnull(x) and x != "" and x != "0,00 EUR" else 0).sum()
+                suma = df[col].apply(lambda x: euro_a_numero(str(x)) if pd.notnull(x) and x != "" and str(x) != "0,00 EUR" else 0).sum()
                 fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
             
             df = pd.concat([df, pd.DataFrame([fila_totales])], ignore_index=True)
@@ -249,6 +255,13 @@ if opcion == "📊 Dividendos a Excel":
             st.dataframe(df)
             csv = df.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv, file_name='dividendos_enriquecidos.csv', mime='text/csv')
+
+        # 🕵️‍♂️ HERRAMIENTA DE DIAGNÓSTICO
+        with st.expander("👁️ Modo Diagnóstico (Despliega si algún PDF falla)"):
+            st.write("Esto es lo que el programa 've' cuando lee tu último PDF. Útil para entender por qué no coge algún número:")
+            st.code(ultimo_texto_leido)
+
+
 
 
 
