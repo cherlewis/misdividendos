@@ -1308,13 +1308,12 @@ elif opcion == "💸 Asistente de Renta Web":
 
 
 # ==========================================
-# 🚀 APLICACIÓN 9: AUDITORÍA PRO (DB)
+# 🚀 APLICACIÓN 9: IMPORTADOR DATOS AEAT (DB)
 # ==========================================
 elif opcion == "⚖️ Auditoría Pro (DB)":
-    st.title("⚖️ Auditoría Fiscal Profesional (Base de Datos)")
-    st.write("Cruza los datos oficiales de Hacienda con tus registros de ING y guarda el resultado.")
+    st.title("🏛️ Importador Oficial de Hacienda (AEAT)")
+    st.write("Sube el archivo Excel/CSV de tus datos fiscales (Rendimientos del Capital Mobiliario) para guardarlos en tu Base de Datos.")
 
-    # Conexión Segura a Supabase
     try:
         from supabase import create_client, Client
         url: str = st.secrets["SUPABASE_URL"]
@@ -1324,76 +1323,102 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
         st.error(f"⚠️ Error de conexión a la base de datos: {e}")
         st.stop()
 
+    archivo_aeat = st.file_uploader("Sube el Excel/CSV de Hacienda", type=["csv", "xlsx", "xls"])
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("1️⃣ Datos de ING")
-        file_ing = st.file_uploader("Sube el CSV de ING (App 1 o 4)", type=["csv"], key="ing_pro")
-    with col2:
-        st.subheader("2️⃣ Datos de Hacienda")
-        file_aeat = st.file_uploader("Sube el Excel/CSV de la AEAT", type=["csv", "xlsx"], key="aeat_pro")
+    if archivo_aeat:
+        with st.spinner("Analizando formato de Hacienda..."):
+            try:
+                if archivo_aeat.name.endswith('.csv'):
+                    df_aeat = pd.read_csv(archivo_aeat, sep=None, engine='python')
+                else:
+                    df_aeat = pd.read_excel(archivo_aeat)
 
-    if file_ing and file_aeat:
-        try:
-            # Procesar ING
-            df_ing = pd.read_csv(file_ing, sep=";")
-            df_ing = df_ing[df_ing["Fecha"] != "TOTALES"] # Limpiar fila totales
-            
-            # Procesar AEAT
-            if file_aeat.name.endswith('.csv'):
-                df_aeat = pd.read_csv(file_aeat, sep=None, engine='python')
-            else:
-                df_aeat = pd.read_excel(file_aeat)
+                # Limpieza de NaN por strings vacíos o ceros
+                df_aeat = df_aeat.fillna("")
 
-            # Estandarizar importes para el cruce
-            df_ing['Bruto_Num'] = df_ing['Importe Bruto'].apply(euro_a_numero).round(2)
-            
-            # Identificar columnas AEAT (Hacienda suele cambiar nombres)
-            col_bruto_aeat = next((c for c in df_aeat.columns if "Íntegro" in c or "bruto" in c.lower()), df_aeat.columns[0])
-            df_aeat['Bruto_Num'] = df_aeat[col_bruto_aeat].apply(euro_a_numero).round(2)
+                st.write("Vista previa de los datos leídos:")
+                st.dataframe(df_aeat.head())
 
-            # --- CRUCE MÁGICO ---
-            df_cruce = pd.merge(
-                df_ing[['Fecha', 'NombreING', 'Bruto_Num', 'Ret. Destino']], 
-                df_aeat[[col_bruto_aeat, 'Bruto_Num']], 
-                on='Bruto_Num', 
-                how='outer', 
-                suffixes=('_ING', '_AEAT')
-            )
-
-            st.subheader("📋 Previsualización del Cruce")
-            
-            # Lógica de Estados
-            def definir_estado(row):
-                if pd.isna(row['NombreING']): return "Falta en ING"
-                if pd.isna(row[col_bruto_aeat]): return "Falta en AEAT"
-                return "OK"
-
-            df_cruce['Estado'] = df_cruce.apply(definir_estado, axis=1)
-            st.dataframe(df_cruce)
-
-            if st.button("💾 Guardar Auditoría en Base de Datos"):
-                registros = []
-                for _, r in df_cruce.iterrows():
-                    registros.append({
-                        "empresa": str(r['NombreING']) if pd.notna(r['NombreING']) else "Desconocido",
-                        "bruto_ing": float(r['Bruto_Num']) if pd.notna(r['Bruto_Num']) else 0,
-                        "bruto_aeat": float(r['Bruto_Num']) if pd.notna(r[col_bruto_aeat]) else 0,
-                        "estado": r['Estado'],
-                        "ejercicio_fiscal": 2024 # Se puede hacer dinámico
-                    })
+                # Buscamos dinámicamente las columnas de la AEAT (suelen variar un poco según el año)
+                # Extraemos los nombres de las columnas del DataFrame
+                cols = df_aeat.columns.tolist()
                 
-                supabase.table("Auditoria_Fiscal").insert(registros).execute()
-                st.success("✅ ¡Auditoría guardada! Ahora tus discrepancias están registradas.")
+                def encontrar_columna(palabras_clave):
+                    for col in cols:
+                        if any(palabra.lower() in col.lower() for palabra in palabras_clave):
+                            return col
+                    return None
 
-        except Exception as e:
-            st.error(f"Error en el cruce: {e}")
+                col_codigo = encontrar_columna(["código", "codigo"])
+                col_nif_emi = encontrar_columna(["nif emisor", "nif del emisor"])
+                col_nom_emi = encontrar_columna(["nombre emisor", "nombre del emisor", "emisor"])
+                col_nif_dec = encontrar_columna(["nif declarante"])
+                col_nom_dec = encontrar_columna(["nombre declarante"])
+                col_clave = encontrar_columna(["clave"])
+                col_tipo = encontrar_columna(["tipo"])
+                col_bruto = encontrar_columna(["íntegro", "integro", "bruto"])
+                col_penal = encontrar_columna(["penalización", "penalizacion"])
+                col_ret = encontrar_columna(["retencion", "retención", "retenciones"])
+                col_gastos = encontrar_columna(["gastos", "deducibles"])
 
-    # --- HISTÓRICO ---
+                ejercicio_fiscal = st.number_input("¿De qué año fiscal son estos datos?", min_value=2020, max_value=2050, value=2024)
+
+                if st.button("🚀 Subir datos a Supabase"):
+                    registros_a_subir = []
+                    
+                    for _, row in df_aeat.iterrows():
+                        # Si no hay importe íntegro, saltamos la fila (puede ser un encabezado o pie de página)
+                        val_bruto = euro_a_numero(row.get(col_bruto, 0)) if col_bruto else 0.0
+                        if val_bruto == 0:
+                            continue
+
+                        registro = {
+                            "codigo": str(row.get(col_codigo, "")).strip() if col_codigo else "",
+                            "nif_emisor": str(row.get(col_nif_emi, "")).strip() if col_nif_emi else "",
+                            "nombre_emisor": str(row.get(col_nom_emi, "")).strip() if col_nom_emi else "",
+                            "nif_declarante": str(row.get(col_nif_dec, "")).strip() if col_nif_dec else "",
+                            "nombre_declarante": str(row.get(col_nom_dec, "")).strip() if col_nom_dec else "",
+                            "clave": str(row.get(col_clave, "")).strip() if col_clave else "",
+                            "tipo": str(row.get(col_tipo, "")).strip() if col_tipo else "",
+                            "importe_integro": val_bruto,
+                            "penalizacion": euro_a_numero(row.get(col_penal, 0)) if col_penal else 0.0,
+                            "retenciones": euro_a_numero(row.get(col_ret, 0)) if col_ret else 0.0,
+                            "gastos_deducibles": euro_a_numero(row.get(col_gastos, 0)) if col_gastos else 0.0,
+                            "ejercicio_fiscal": ejercicio_fiscal
+                        }
+                        registros_a_subir.append(registro)
+                    
+                    if registros_a_subir:
+                        respuesta = supabase.table("datosfiscalesaeat").insert(registros_a_subir).execute()
+                        st.success(f"✅ ¡{len(registros_a_subir)} registros subidos con éxito a tu base de datos!")
+                        import time
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.warning("No se encontraron registros válidos para subir (revisa si las columnas coinciden).")
+
+            except Exception as e:
+                st.error(f"❌ Error procesando el archivo: {e}")
+
     st.markdown("---")
-    st.subheader("📜 Historial de Discrepancias Guardadas")
-    res = supabase.table("Auditoria_Fiscal").select("*").execute()
-    if res.data:
-        st.table(pd.DataFrame(res.data))
+    st.subheader("📊 Datos Fiscales Actuales en la Base de Datos")
+    try:
+        res = supabase.table("datosfiscalesaeat").select("*").order("importe_integro", desc=True).execute()
+        if res.data:
+            df_bd = pd.DataFrame(res.data)
+            col_b1, col_b2 = st.columns(2)
+            col_b1.metric("Total de Registros Guardados", len(df_bd))
+            col_b2.metric("Suma Total Íntegro", f"{df_bd['importe_integro'].sum():.2f} €")
+            
+            st.dataframe(df_bd[['ejercicio_fiscal', 'nombre_emisor', 'importe_integro', 'retenciones', 'clave', 'tipo']], use_container_width=True)
+            
+            if st.button("🗑️ Borrar TODOS los datos fiscales de la BD"):
+                supabase.table("datosfiscalesaeat").delete().gt("id", 0).execute()
+                st.success("Base de datos de Hacienda vaciada.")
+                st.rerun()
+        else:
+            st.info("Aún no tienes datos de Hacienda en la base de datos.")
+    except Exception as e:
+        st.error(f"Error al leer la tabla de Supabase: {e}")
 
 
