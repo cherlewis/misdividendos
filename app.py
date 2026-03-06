@@ -184,7 +184,8 @@ if opcion == "📊 Dividendos a Excel":
             import pandas as pd
             df = pd.DataFrame(datos_dividendos)
 
-            # --- CRUCE CON BASE DE DATOS ---
+
+            # --- CRUCE CON BASE DE DATOS (Con Traductor de Derechos) ---
             with st.spinner("🧠 Cruzando con tu Base de Datos..."):
                 try:
                     from supabase import create_client, Client
@@ -196,8 +197,21 @@ if opcion == "📊 Dividendos a Excel":
                     db_nombre = {str(row["NombreING"]).upper().strip(): row.to_dict() for _, row in df_db.iterrows()} if not df_db.empty else {}
 
                     sectores, subsectores, paises, nombres_ing, nombres_hac, isins = [], [], [], [], [], []
+                    
                     for _, row in df.iterrows():
                         emp_pdf = str(row["Empresa_PDF"]).upper().strip()
+                        
+                        # 🕵️‍♂️ TRADUCTOR DE DERECHOS (Igual que en la App 2)
+                        # Si es un derecho, lo "traducimos" al nombre de la empresa matriz
+                        if emp_pdf.startswith("IBE.D"): emp_pdf = "IBERDROLA"
+                        elif emp_pdf.startswith("VIS.D"): emp_pdf = "VISCOFAN"
+                        elif emp_pdf.startswith("VID.D"): emp_pdf = "VIDRALA"
+                        elif emp_pdf.startswith("REP.D"): emp_pdf = "REPSOL"
+                        elif emp_pdf.startswith("TEF.D"): emp_pdf = "TELEFONICA"
+                        elif emp_pdf.startswith("ACS.D"): emp_pdf = "ACS"
+                        elif emp_pdf.startswith("FER.D"): emp_pdf = "FERROVIAL"
+                        elif emp_pdf.startswith("ELE.D"): emp_pdf = "ENDESA"
+
                         match = db_nombre.get(emp_pdf)
                         if not match:
                             for n_db, d_db in db_nombre.items():
@@ -222,6 +236,7 @@ if opcion == "📊 Dividendos a Excel":
                     df["Sector"], df["Subsector"], df["Pais"] = sectores, subsectores, paises
                     df["ISIN"], df["NombreING"], df["NombreHacienda"] = isins, nombres_ing, nombres_hac
 
+                    
                     cols_finales = ["Fecha", "NombreING", "ISIN", "Pais", "Sector", "Subsector", "Títulos", "Importe Bruto", "Ret. Origen", "Ret. Destino", "Importe Neto", "Divisa / Cambio", "NombreHacienda", "Archivo"]
                     df = df[cols_finales]
                 except Exception as e:
