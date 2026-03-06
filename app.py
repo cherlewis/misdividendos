@@ -106,7 +106,7 @@ st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
 # ==========================================
 if opcion == "📊 Cuadro de Mando (Dashboard)":
     st.title("📊 Cuadro de Mando: Análisis de Cartera")
-    st.write("Visualización en tiempo real de tu diversificación basada en tu Base de Datos.")
+    st.write("Visualización interactiva de tu diversificación basada en tu Base de Datos.")
 
     try:
         from supabase import create_client, Client
@@ -114,7 +114,6 @@ if opcion == "📊 Cuadro de Mando (Dashboard)":
         key: str = st.secrets["SUPABASE_KEY"]
         supabase: Client = create_client(url, key)
         
-        # Cargamos los datos de las empresas
         with st.spinner("Cargando datos estratégicos..."):
             respuesta = supabase.table("Empresas_Table").select("Sector, Subsector, Pais, NombreING").execute()
             df_dash = pd.DataFrame(respuesta.data)
@@ -128,55 +127,56 @@ if opcion == "📊 Cuadro de Mando (Dashboard)":
 
             st.markdown("---")
 
-            # --- GRÁFICOS ---
-            import matplotlib.pyplot as plt
-
+            # --- GRÁFICOS INTERACTIVOS (PLOTLY) ---
             col_g1, col_g2 = st.columns(2)
 
             with col_g1:
-                st.subheader("🌎 Distribución por Países")
-                fig1, ax1 = plt.subplots(figsize=(10, 7))
-                counts_pais = df_dash['Pais'].value_counts()
-                # Colores elegantes
-                colors = plt.cm.Paired(range(len(counts_pais)))
-                ax1.pie(counts_pais, labels=counts_pais.index, autopct='%1.1f%%', startangle=140, colors=colors, textprops={'fontsize': 12})
-                ax1.axis('equal') 
-                st.pyplot(fig1)
+                st.subheader("🌎 Diversificación por País")
+                # Gráfico de tarta interactivo de Streamlit
+                df_pais = df_dash['Pais'].value_counts().reset_index()
+                df_pais.columns = ['País', 'Cantidad']
+                st.write("Distribución porcentual:")
+                st.vega_lite_chart(df_pais, {
+                    'mark': {'type': 'arc', 'innerRadius': 50, 'tooltip': True},
+                    'encoding': {
+                        'theta': {'field': 'Cantidad', 'type': 'quantitative'},
+                        'color': {'field': 'País', 'type': 'nominal', 'legend': {"orient": "bottom"}},
+                    },
+                }, use_container_width=True)
 
             with col_g2:
                 st.subheader("🏗️ Diversificación por Sector")
-                fig2, ax2 = plt.subplots(figsize=(10, 7))
-                counts_sector = df_dash['Sector'].value_counts()
-                ax2.pie(counts_sector, labels=counts_sector.index, autopct='%1.1f%%', startangle=140, colors=plt.cm.Pastel1(range(len(counts_sector))), textprops={'fontsize': 12})
-                ax2.axis('equal')
-                st.pyplot(fig2)
+                df_sect = df_dash['Sector'].value_counts().reset_index()
+                df_sect.columns = ['Sector', 'Cantidad']
+                st.write("Peso por industria:")
+                st.vega_lite_chart(df_sect, {
+                    'mark': {'type': 'arc', 'innerRadius': 50, 'tooltip': True},
+                    'encoding': {
+                        'theta': {'field': 'Cantidad', 'type': 'quantitative'},
+                        'color': {'field': 'Sector', 'type': 'nominal', 'legend': {"orient": "bottom"}},
+                    },
+                }, use_container_width=True)
 
             st.markdown("---")
-            st.subheader("🔍 Detalle por Subsectores (Top 10)")
             
-            # Gráfico de barras horizontales para subsectores
-            fig3, ax3 = plt.subplots(figsize=(12, 6))
-            counts_sub = df_dash['Subsector'].value_counts().nlargest(10).sort_values(ascending=True)
-            counts_sub.plot(kind='barh', color='skyblue', ax=ax3)
-            ax3.set_xlabel('Número de Empresas')
-            ax3.set_title('Top Subsectores en Cartera')
-            plt.tight_layout()
-            st.pyplot(fig3)
+            # --- GRÁFICO DE BARRAS DE SUBSECTORES ---
+            st.subheader("🔍 Análisis Detallado de Subsectores")
+            df_sub = df_dash['Subsector'].value_counts().reset_index()
+            df_sub.columns = ['Subsector', 'Empresas']
+            df_sub = df_sub.sort_values('Empresas', ascending=False).head(15)
+            
+            st.bar_chart(df_sub.set_index('Subsector'))
 
             # --- TABLA DE APOYO ---
-            with st.expander("Ver desglose de empresas por Sector"):
-                sector_sel = st.selectbox("Filtra por sector para ver tus empresas:", ["Todos"] + sorted(df_dash['Sector'].unique().tolist()))
-                if sector_sel == "Todos":
-                    st.table(df_dash[['NombreING', 'Sector', 'Subsector', 'Pais']].sort_values(by='Sector'))
-                else:
-                    st.table(df_dash[df_dash['Sector'] == sector_sel][['NombreING', 'Subsector', 'Pais']])
+            st.markdown("---")
+            with st.expander("📄 Ver listado completo de activos"):
+                st.dataframe(df_dash.sort_values(by='Sector'), use_container_width=True)
 
         else:
             st.info("Aún no tienes empresas en tu base de datos. Ve a la pestaña '🏢 Gestor de Empresas' para añadir las primeras.")
 
     except Exception as e:
-        st.error(f"No se pudo cargar el Dashboard. Asegúrate de que Supabase está configurado. Error: {e}")
-
+        st.error(f"⚠️ Error al cargar el Dashboard: {e}")
 
 
 
