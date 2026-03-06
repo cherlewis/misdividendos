@@ -219,6 +219,128 @@ if opcion == "📊 Dividendos a Excel":
 
 
 
+# ==========================================
+# 🚀 APLICACIÓN 2: COMPRAS Y VENTAS
+# ==========================================
+elif opcion == "🛒 Compras/Ventas a Excel":
+    st.title("🛒 Extractor de Compras y Ventas")
+    st.write("Sube tus justificantes de operaciones de bolsa (ING) para obtener el desglose de comisiones.")
+    archivos_pdf_op = st.file_uploader("Sube tus PDFs de Operaciones aquí", type=["pdf"], accept_multiple_files=True, key="ops")
+
+    if archivos_pdf_op:
+        datos_operaciones = []
+        total_archivos = len(archivos_pdf_op)
+        barra_progreso = st.progress(0)
+        texto_estado = st.empty()
+
+        for i, archivo in enumerate(archivos_pdf_op):
+            texto_estado.text(f"⏳ Procesando ({i+1}/{total_archivos}): {archivo.name}...")
+            try:
+                with pdfplumber.open(archivo) as pdf:
+                    texto = pdf.pages[0].extract_text(layout=True)
+                    if not texto: texto = pdf.pages[0].extract_text()
+                    
+                    if texto:
+                        patron_int = r"(\d[\d\.]*)\s+([A-Za-z0-9\.\-\&\'\s]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Za-z0-9\.\-\(\)\s]+?)\s+(Compra|Venta)\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})"
+                        patron_nac = r"(\d[\d\.]*)\s+([A-Za-z0-9\.\-\&\'\s]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Za-z0-9\.\-\(\)\s]+?)\s+(Compra|Venta)\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})"
+                        
+                        match_int = re.search(patron_int, texto)
+                        match_nac = re.search(patron_nac, texto) if not match_int else None
+                        
+                        patron_fecha = r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})\s+(\d+)\s+([A-Za-z áéíóúÁÉÍÓÚ]+?)\s+([\d,]+\s+[A-Z]{3})(?:\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}))?(?:\s+([\d,]+\s+[A-Z]{3}))?\s+([\d,]+\s+[A-Z]{3})"
+                        match_fecha = re.search(patron_fecha, texto)
+
+                        if match_int:
+                            datos = [g.strip() for g in match_int.groups()]
+                            titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, comision_cambio, importe_total = datos
+                        elif match_nac:
+                            datos = [g.strip() for g in match_nac.groups()]
+                            titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, importe_total = datos
+                            comision_cambio = "0,00 EUR"
+                        else:
+                            continue
+                            
+                        fecha_ejecucion = match_fecha.group(2).strip()[:10] if match_fecha else "No encontrada"
+                        tipo_orden = match_fecha.group(4).strip() if match_fecha else "Desconocido"
+                        cambio_divisa = (match_fecha.group(7).strip() if match_fecha.group(7) else "1,000 EUR") if match_fecha else "Revisar"
+
+                        datos_operaciones.append({
+                            "Fecha": fecha_ejecucion, "Operación": tipo_op, "Tipo Orden": tipo_orden, 
+                            "Empresa_PDF": empresa, "ISIN": isin, "Títulos": titulos, "Precio": precio,
+                            "Importe Op.": importe_op, "Comisión ING": comision_ing, "Gastos Bolsa": gastos_bolsa,
+                            "Impuestos": impuestos, "Comisión Cambio": comision_cambio, "Importe Total": importe_total,
+                            "Mercado": mercado, "Divisa / Cambio": cambio_divisa, "Archivo": archivo.name
+                        })
+            except Exception as e:
+                st.warning(f"⚠️ Error al procesar '{archivo.name}'. Se ha omitido.")
+            
+            gc.collect()
+            barra_progreso.progress((i + 1) / total_archivos)
+
+        texto_estado.empty()
+
+        if datos_operaciones:
+            df_op = pd.DataFrame(datos_operaciones)
+            
+            # ==========================================
+            # 🧠 LA MAGIA: CRUCE CON BASE DE DATOS
+            # ==========================================
+            with st.spinner("🧠 Cruzando datos con tu Base de Datos en Supabase..."):
+                try:
+                    from supabase import create_client, Client
+                    url: str = st.secrets["SUPABASE_URL"]
+                    key: str = st.secrets["SUPABASE_KEY"]
+                    supabase: Client = create_client(url, key)
+                    
+                    # Nos traemos solo las columnas que nos interesan
+                    respuesta = supabase.table("Empresas_Table").select("ISIN, NombreING, Pais, Sector, Subsector, NombreHacienda").execute()
+                    df_db = pd.DataFrame(respuesta.data)
+                    
+                    if not df_db.empty:
+                        # Hacemos el cruce EXACTO usando el ISIN
+                        df_op = pd.merge(df_op, df_db, on="ISIN", how="left")
+                        
+                        # Si hay empresas nuevas que no tienes en tu BD, les ponemos "Desconocido"
+                        df_op["Sector"] = df_op["Sector"].fillna("Pendiente de Clasificar")
+                        df_op["Subsector"] = df_op["Subsector"].fillna("Pendiente de Clasificar")
+                        df_op["Pais"] = df_op["Pais"].fillna("Desconocido")
+                        df_op["NombreING"] = df_op["NombreING"].fillna(df_op["Empresa_PDF"])
+                        
+                        # Reordenamos las columnas para que quede un Excel súper profesional
+                        columnas_finales = [
+                            "Fecha", "Operación", "NombreING", "ISIN", "Pais", "Sector", "Subsector", 
+                            "Títulos", "Precio", "Importe Op.", "Comisión ING", "Gastos Bolsa", 
+                            "Impuestos", "Comisión Cambio", "Importe Total", "Mercado", "Divisa / Cambio", 
+                            "NombreHacienda", "Archivo"
+                        ]
+                        df_op = df_op[columnas_finales]
+                except Exception as e:
+                    st.warning("No se ha podido conectar a la Base de Datos. Generando Excel básico sin sectores...")
+            # ==========================================
+
+            st.success(f"¡Se procesaron y cruzaron {len(df_op)} archivo(s) con éxito!")
+            
+            df_op['Fecha_Temporal'] = pd.to_datetime(df_op['Fecha'], format='%d/%m/%Y', errors='coerce')
+            df_op = df_op.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
+            
+            # Fila de totales
+            fila_totales = {col: "" for col in df_op.columns}
+            fila_totales["Fecha"] = "TOTALES"
+            cols_a_sumar_op = ["Importe Op.", "Comisión ING", "Gastos Bolsa", "Impuestos", "Comisión Cambio", "Importe Total"]
+            for col in cols_a_sumar_op:
+                # Aseguramos que ignoramos los textos en blanco de las columnas nuevas
+                suma = df_op[col].apply(lambda x: euro_a_numero(str(x)) if pd.notnull(x) and x != "" else 0).sum()
+                fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
+            
+            df_op = pd.concat([df_op, pd.DataFrame([fila_totales])], ignore_index=True)
+            
+            st.dataframe(df_op)
+            csv_op = df_op.to_csv(index=False, sep=";").encode('utf-8-sig')
+            st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv_op, file_name='operaciones_bolsa_enriquecido.csv', mime='text/csv')
+
+
+
+
 
 # ==========================================
 # 🚀 APLICACIÓN 3: RENOMBRADOR INTELIGENTE
