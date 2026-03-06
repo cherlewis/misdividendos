@@ -83,15 +83,17 @@ opcion = st.sidebar.radio(
     "", 
     [
         "📊 Cuadro de Mando (Dashboard)",
-        "💸 Asistente de Renta Web", # <--- La nueva herramienta fiscal
         "📊 Dividendos a Excel", 
         "🛒 Compras/Ventas a Excel", 
         "🗂️ Renombrador de PDFs",
         "📄 Informe Fiscal (Div. y DRIPs)",
         "⚖️ Auditoría Hacienda vs ING",
-        "🏢 Gestor de Empresas (DB)"
+        "📉 Calculadora Plusvalías (Hacienda)",
+        "🏢 Gestor de Empresas (DB)",
+        "⚖️ Auditoría Pro (DB)" # <--- La nueva joya
     ]
 )
+
 
 
 
@@ -1301,3 +1303,89 @@ elif opcion == "💸 Asistente de Renta Web":
                 2. **En la misma Casilla 029:** En el apartado de retenciones, asegúrate de que figuren los **{formato_numero_tabla(total_ret_espana)} €**.
                 3. **En la Casilla 588:** Busca el apartado de 'Doble Imposición Internacional'. En 'Rentas incluidas en la base del ahorro' pon el bruto extranjero ({formatear_moneda(total_bruto_extranjero)}) y en 'Impuesto pagado en el extranjero' pon **{formato_numero_tabla(total_deduccion_588)} €**.
                 """)
+
+
+# ==========================================
+# 🚀 APLICACIÓN 9: AUDITORÍA PRO (DB)
+# ==========================================
+elif opcion == "⚖️ Auditoría Pro (DB)":
+    st.title("⚖️ Auditoría Fiscal Profesional (Base de Datos)")
+    st.write("Cruza los datos oficiales de Hacienda con tus registros de ING y guarda el resultado.")
+
+    # Conexión a Supabase
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    supabase = create_client(url, key)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("1️⃣ Datos de ING")
+        file_ing = st.file_uploader("Sube el CSV de ING (App 1 o 4)", type=["csv"], key="ing_pro")
+    with col2:
+        st.subheader("2️⃣ Datos de Hacienda")
+        file_aeat = st.file_uploader("Sube el Excel/CSV de la AEAT", type=["csv", "xlsx"], key="aeat_pro")
+
+    if file_ing and file_aeat:
+        try:
+            # Procesar ING
+            df_ing = pd.read_csv(file_ing, sep=";")
+            df_ing = df_ing[df_ing["Fecha"] != "TOTALES"] # Limpiar fila totales
+            
+            # Procesar AEAT
+            if file_aeat.name.endswith('.csv'):
+                df_aeat = pd.read_csv(file_aeat, sep=None, engine='python')
+            else:
+                df_aeat = pd.read_excel(file_aeat)
+
+            # Estandarizar importes para el cruce
+            df_ing['Bruto_Num'] = df_ing['Importe Bruto'].apply(euro_a_numero).round(2)
+            
+            # Identificar columnas AEAT (Hacienda suele cambiar nombres)
+            col_bruto_aeat = next((c for c in df_aeat.columns if "Íntegro" in c or "bruto" in c.lower()), df_aeat.columns[0])
+            df_aeat['Bruto_Num'] = df_aeat[col_bruto_aeat].apply(euro_a_numero).round(2)
+
+            # --- CRUCE MÁGICO ---
+            df_cruce = pd.merge(
+                df_ing[['Fecha', 'NombreING', 'Bruto_Num', 'Ret. Destino']], 
+                df_aeat[[col_bruto_aeat, 'Bruto_Num']], 
+                on='Bruto_Num', 
+                how='outer', 
+                suffixes=('_ING', '_AEAT')
+            )
+
+            st.subheader("📋 Previsualización del Cruce")
+            
+            # Lógica de Estados
+            def definir_estado(row):
+                if pd.isna(row['NombreING']): return "Falta en ING"
+                if pd.isna(row[col_bruto_aeat]): return "Falta en AEAT"
+                return "OK"
+
+            df_cruce['Estado'] = df_cruce.apply(definir_estado, axis=1)
+            st.dataframe(df_cruce)
+
+            if st.button("💾 Guardar Auditoría en Base de Datos"):
+                registros = []
+                for _, r in df_cruce.iterrows():
+                    registros.append({
+                        "empresa": str(r['NombreING']) if pd.notna(r['NombreING']) else "Desconocido",
+                        "bruto_ing": float(r['Bruto_Num']) if pd.notna(r['Bruto_Num']) else 0,
+                        "bruto_aeat": float(r['Bruto_Num']) if pd.notna(r[col_bruto_aeat]) else 0,
+                        "estado": r['Estado'],
+                        "ejercicio_fiscal": 2024 # Se puede hacer dinámico
+                    })
+                
+                supabase.table("Auditoria_Fiscal").insert(registros).execute()
+                st.success("✅ ¡Auditoría guardada! Ahora tus discrepancias están registradas.")
+
+        except Exception as e:
+            st.error(f"Error en el cruce: {e}")
+
+    # --- HISTÓRICO ---
+    st.markdown("---")
+    st.subheader("📜 Historial de Discrepancias Guardadas")
+    res = supabase.table("Auditoria_Fiscal").select("*").execute()
+    if res.data:
+        st.table(pd.DataFrame(res.data))
+
+
