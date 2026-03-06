@@ -296,8 +296,14 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                     respuesta = supabase.table("Empresas_Table").select("ISIN, NombreING, Pais, Sector, Subsector, NombreHacienda").execute()
                     df_db = pd.DataFrame(respuesta.data)
                     
-                    db_isin = df_db.set_index("ISIN").to_dict("index") if not df_db.empty else {}
-                    db_nombre = {str(row["NombreING"]).upper(): row for _, row in df_db.iterrows()} if not df_db.empty else {}
+                    # 🔧 SOLUCIÓN: Eliminamos los ISIN duplicados (o vacíos) a la hora de crear el diccionario de búsqueda
+                    if not df_db.empty:
+                        df_db_limpio = df_db.dropna(subset=['ISIN']).drop_duplicates(subset=['ISIN'])
+                        db_isin = df_db_limpio.set_index("ISIN").to_dict("index")
+                        db_nombre = {str(row["NombreING"]).upper(): row for _, row in df_db.iterrows()}
+                    else:
+                        db_isin = {}
+                        db_nombre = {}
 
                     # 🕵️‍♂️ TRADUCTOR DE DERECHOS ESPAÑOLES
                     def normalizar_derechos(nombre_pdf):
@@ -352,12 +358,10 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                         "NombreHacienda", "Archivo"
                     ]
                     df_op = df_op[columnas_finales]
-            #    except Exception as e:
-            #        st.warning("No se ha podido conectar a la Base de Datos. Generando Excel básico...")
-
                 except Exception as e:
                     st.error(f"⚠️ Error técnico real del cruce: {e}")
                     st.warning("Generando Excel básico...")
+            # ==========================================
             # ==========================================
 
             st.success(f"¡Se procesaron y cruzaron {len(df_op)} archivo(s) con éxito!")
