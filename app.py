@@ -219,84 +219,6 @@ if opcion == "📊 Dividendos a Excel":
 
 
 
-# ==========================================
-# 🚀 APLICACIÓN 2: COMPRAS Y VENTAS
-# ==========================================
-elif opcion == "🛒 Compras/Ventas a Excel":
-    st.title("🛒 Extractor de Compras y Ventas")
-    st.write("Sube tus justificantes de operaciones de bolsa (ING) para obtener el desglose de comisiones.")
-    archivos_pdf_op = st.file_uploader("Sube tus PDFs de Operaciones aquí", type=["pdf"], accept_multiple_files=True, key="ops")
-
-    if archivos_pdf_op:
-        datos_operaciones = []
-        total_archivos = len(archivos_pdf_op)
-        barra_progreso = st.progress(0)
-        texto_estado = st.empty()
-
-        for i, archivo in enumerate(archivos_pdf_op):
-            texto_estado.text(f"⏳ Procesando ({i+1}/{total_archivos}): {archivo.name}...")
-            try:
-                with pdfplumber.open(archivo) as pdf:
-                    texto = pdf.pages[0].extract_text(layout=True)
-                    if not texto: texto = pdf.pages[0].extract_text()
-                    
-                    if texto:
-                        # Patrones súper tolerantes a puntos, números en nombres (ej: IBE.D 01.25) y mercados (M.CONTINUO)
-                        patron_int = r"(\d[\d\.]*)\s+([A-Za-z0-9\.\-\&\'\s]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Za-z0-9\.\-\(\)\s]+?)\s+(Compra|Venta)\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})"
-                        patron_nac = r"(\d[\d\.]*)\s+([A-Za-z0-9\.\-\&\'\s]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Za-z0-9\.\-\(\)\s]+?)\s+(Compra|Venta)\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})"
-                        
-                        match_int = re.search(patron_int, texto)
-                        match_nac = re.search(patron_nac, texto) if not match_int else None
-                        
-                        patron_fecha = r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})\s+(\d+)\s+([A-Za-z áéíóúÁÉÍÓÚ]+?)\s+([\d,]+\s+[A-Z]{3})(?:\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}))?(?:\s+([\d,]+\s+[A-Z]{3}))?\s+([\d,]+\s+[A-Z]{3})"
-                        match_fecha = re.search(patron_fecha, texto)
-
-                        if match_int:
-                            datos = [g.strip() for g in match_int.groups()]
-                            titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, comision_cambio, importe_total = datos
-                        elif match_nac:
-                            datos = [g.strip() for g in match_nac.groups()]
-                            titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, importe_total = datos
-                            comision_cambio = "0,00 EUR"
-                        else:
-                            continue
-                            
-                        fecha_ejecucion = match_fecha.group(2).strip()[:10] if match_fecha else "No encontrada"
-                        tipo_orden = match_fecha.group(4).strip() if match_fecha else "Desconocido"
-                        cambio_divisa = (match_fecha.group(7).strip() if match_fecha.group(7) else "1,000 EUR") if match_fecha else "Revisar"
-
-                        datos_operaciones.append({
-                            "Fecha": fecha_ejecucion, "Operación": tipo_op, "Tipo Orden": tipo_orden, 
-                            "Empresa": empresa, "ISIN": isin, "Títulos": titulos, "Precio": precio,
-                            "Importe Op.": importe_op, "Comisión ING": comision_ing, "Gastos Bolsa": gastos_bolsa,
-                            "Impuestos": impuestos, "Comisión Cambio": comision_cambio, "Importe Total": importe_total,
-                            "Mercado": mercado, "Divisa / Cambio": cambio_divisa, "Archivo": archivo.name
-                        })
-            except Exception as e:
-                st.warning(f"⚠️ Error al procesar '{archivo.name}'. Se ha omitido.")
-            
-            gc.collect()
-            barra_progreso.progress((i + 1) / total_archivos)
-
-        texto_estado.empty()
-
-        if datos_operaciones:
-            st.success(f"¡Se procesaron {len(datos_operaciones)} archivo(s) con éxito!")
-            df_op = pd.DataFrame(datos_operaciones)
-            df_op['Fecha_Temporal'] = pd.to_datetime(df_op['Fecha'], format='%d/%m/%Y', errors='coerce')
-            df_op = df_op.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
-            
-            fila_totales = {col: "" for col in df_op.columns}
-            fila_totales["Fecha"] = "TOTALES"
-            cols_a_sumar_op = ["Importe Op.", "Comisión ING", "Gastos Bolsa", "Impuestos", "Comisión Cambio", "Importe Total"]
-            for col in cols_a_sumar_op:
-                suma = df_op[col].apply(euro_a_numero).sum()
-                fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
-            
-            df_op = pd.concat([df_op, pd.DataFrame([fila_totales])], ignore_index=True)
-            st.dataframe(df_op)
-            csv_op = df_op.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar Excel", data=csv_op, file_name='operaciones_bolsa.csv', mime='text/csv')
 
 # ==========================================
 # 🚀 APLICACIÓN 3: RENOMBRADOR INTELIGENTE
@@ -321,10 +243,8 @@ elif opcion == "🗂️ Renombrador de PDFs":
                         if not texto: texto = pdf.pages[0].extract_text()
                         
                         if texto:
-                            # 1. Detectar todas las fechas
                             fechas = re.findall(r"\d{2}/\d{2}/\d{4}", texto)
                             
-                            # 2. Motor de decisión: ¿Es compra/venta o dividendo?
                             match_isin = re.search(r"([A-Z]{2}[A-Z0-9]{10})", texto)
                             match_tipo = re.search(r"\b(Compra|Venta)\b", texto, re.IGNORECASE)
                             
@@ -332,18 +252,22 @@ elif opcion == "🗂️ Renombrador de PDFs":
                                 es_trade = True
                                 tipo_operacion = match_tipo.group(1).capitalize()
                                 
-                                # Las compras suelen tener la fecha de ejecución al final, cogemos la más reciente
-                                fecha_ordenada = sorted(fechas, key=lambda f: f[6:] + f[3:5] + f[0:2])[-1] if fechas else "00000000"
+                                # 🎯 NUEVA LÓGICA DE FECHA: Buscamos la fecha que tiene la hora al lado (Fecha de ejecución)
+                                match_ejecucion = re.search(r"(\d{2}/\d{2}/\d{4})\s+\d{2}:\d{2}", texto)
+                                if match_ejecucion:
+                                    fecha_ordenada = match_ejecucion.group(1)
+                                else:
+                                    # Si no hay hora, solemos coger la segunda fecha que aparece en el PDF
+                                    fecha_ordenada = fechas[1] if len(fechas) >= 2 else (fechas[0] if fechas else "00000000")
                                 
-                                # Extraer el nombre de la empresa (Ej: IBE.D 01.25)
                                 match_linea = re.search(rf"(\d[\d\.]*)\s+([A-Za-z0-9\.\-\&\' ]+?)\s+{match_isin.group(1)}", texto)
                                 if match_linea:
                                     empresa = match_linea.group(2).strip()
                                 else:
-                                    empresa = match_isin.group(1) # Fallback: usar el ISIN si falla
+                                    empresa = match_isin.group(1)
                             else:
                                 es_trade = False
-                                # Los dividendos suelen usar la primera fecha (Fecha de Abono)
+                                # Los dividendos suelen usar la primera fecha que aparece
                                 fecha_ordenada = sorted(fechas, key=lambda f: f[6:] + f[3:5] + f[0:2])[0] if fechas else "00000000"
                                 
                                 empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Empresa")
@@ -351,7 +275,6 @@ elif opcion == "🗂️ Renombrador de PDFs":
 
                             fecha_formateada = datetime.strptime(fecha_ordenada, "%d/%m/%Y").strftime("%Y%m%d") if fecha_ordenada != "00000000" else "00000000"
 
-                            # Limpiar nombre para que quede bonito en el PDF
                             empresa_limpia = re.sub(r'\(.*?\)', '', empresa) 
                             empresa_limpia = re.sub(r'[^a-zA-Z0-9]', ' ', empresa_limpia) 
                             empresa_limpia = "".join([palabra.capitalize() for palabra in empresa_limpia.split()])
