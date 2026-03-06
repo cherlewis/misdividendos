@@ -218,7 +218,6 @@ if opcion == "📊 Dividendos a Excel":
 
 
 
-
 # ==========================================
 # 🚀 APLICACIÓN 2: COMPRAS Y VENTAS
 # ==========================================
@@ -241,8 +240,9 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                     if not texto: texto = pdf.pages[0].extract_text()
                     
                     if texto:
-                        patron_int = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})"
-                        patron_nac = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})"
+                        # ¡ACTUALIZADO AQUÍ PARA ACEPTAR M.CONTINUO Y NOMBRES DE DERECHOS!
+                        patron_int = r"(\d+)\s+(.+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+(.+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})"
+                        patron_nac = r"(\d+)\s+(.+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+(.+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})\s+([\d,]+\s+[A-Z]{3})"
                         
                         match_int = re.search(patron_int, texto)
                         match_nac = re.search(patron_nac, texto) if not match_int else None
@@ -327,7 +327,8 @@ elif opcion == "🗂️ Renombrador de PDFs":
                             else:
                                 fecha_formateada = "00000000"
 
-                            patron_trade = r"(\d+)\s+([A-Z0-9\s\.\-\&]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Z\s]+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})"
+                            # ¡ACTUALIZADO AQUÍ PARA ACEPTAR M.CONTINUO Y NOMBRES DE DERECHOS!
+                            patron_trade = r"(\d+)\s+(.+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+(.+?)\s+(Compra|Venta)\s+([\d,]+\s+[A-Z]{3})"
                             match_trade = re.search(patron_trade, texto)
 
                             if match_trade:
@@ -359,6 +360,12 @@ elif opcion == "🗂️ Renombrador de PDFs":
         texto_estado.empty()
         st.success("¡Todos los archivos procesables han sido empaquetados!")
         st.download_button(label="📦 Descargar ZIP con PDFs renombrados", data=zip_buffer.getvalue(), file_name="Movimientos_Organizados.zip", mime="application/zip")
+
+
+
+
+
+
 
 # ==========================================
 # 🚀 APLICACIÓN 4: INFORME FISCAL (DIVIDENDOS Y DRIPS)
