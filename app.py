@@ -241,8 +241,9 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                     if not texto: texto = pdf.pages[0].extract_text()
                     
                     if texto:
-                        patron_int = r"(\d[\d\.]*)\s+([A-Za-z0-9\.\-\&\'\s]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Za-z0-9\.\-\(\)\s]+?)\s+(Compra|Venta)\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})"
-                        patron_nac = r"(\d[\d\.]*)\s+([A-Za-z0-9\.\-\&\'\s]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Za-z0-9\.\-\(\)\s]+?)\s+(Compra|Venta)\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})\s+([\d,]+\s*[A-Z]{3})"
+                        # 🔒 CANDADO HORIZONTAL: Usamos [ \t] en lugar de \s para que NO salte de línea y lea tu nombre
+                        patron_int = r"(\d[\d\.]*)[ \t]+([A-Za-z0-9\.\-\&\' ]+?)[ \t]+([A-Z]{2}[A-Z0-9]{10})[ \t]+([A-Za-z0-9\.\-\(\) ]+?)[ \t]+(Compra|Venta)[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})"
+                        patron_nac = r"(\d[\d\.]*)[ \t]+([A-Za-z0-9\.\-\&\' ]+?)[ \t]+([A-Z]{2}[A-Z0-9]{10})[ \t]+([A-Za-z0-9\.\-\(\) ]+?)[ \t]+(Compra|Venta)[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})"
                         
                         match_int = re.search(patron_int, texto)
                         match_nac = re.search(patron_nac, texto) if not match_int else None
@@ -285,50 +286,84 @@ elif opcion == "🛒 Compras/Ventas a Excel":
             # ==========================================
             # 🧠 LA MAGIA: CRUCE CON BASE DE DATOS
             # ==========================================
-            with st.spinner("🧠 Cruzando datos con tu Base de Datos en Supabase..."):
+            with st.spinner("🧠 Cruzando datos y traduciendo derechos..."):
                 try:
                     from supabase import create_client, Client
                     url: str = st.secrets["SUPABASE_URL"]
                     key: str = st.secrets["SUPABASE_KEY"]
                     supabase: Client = create_client(url, key)
                     
-                    # Nos traemos solo las columnas que nos interesan
                     respuesta = supabase.table("Empresas_Table").select("ISIN, NombreING, Pais, Sector, Subsector, NombreHacienda").execute()
                     df_db = pd.DataFrame(respuesta.data)
                     
-                    if not df_db.empty:
-                        # Hacemos el cruce EXACTO usando el ISIN
-                        df_op = pd.merge(df_op, df_db, on="ISIN", how="left")
+                    db_isin = df_db.set_index("ISIN").to_dict("index") if not df_db.empty else {}
+                    db_nombre = {str(row["NombreING"]).upper(): row for _, row in df_db.iterrows()} if not df_db.empty else {}
+
+                    # 🕵️‍♂️ TRADUCTOR DE DERECHOS ESPAÑOLES
+                    def normalizar_derechos(nombre_pdf):
+                        n = str(nombre_pdf).upper()
+                        if n.startswith("IBE.D"): return "IBERDROLA"
+                        if n.startswith("VIS.D"): return "VISCOFAN"
+                        if n.startswith("VID.D"): return "VIDRALA"
+                        if n.startswith("REP.D"): return "REPSOL"
+                        if n.startswith("TEF.D"): return "TELEFONICA"
+                        if n.startswith("ACS.D"): return "ACS"
+                        if n.startswith("FER.D"): return "FERROVIAL"
+                        if n.startswith("SAB.D"): return "BANCO SABADELL"
+                        if n.startswith("ELE.D"): return "ENDESA"
+                        return n
+
+                    sectores, subsectores, paises, nombres_ing, nombres_hac = [], [], [], [], []
+
+                    for _, row in df_op.iterrows():
+                        isin_op = str(row["ISIN"])
+                        empresa_pdf = str(row["Empresa_PDF"])
+                        nombre_norm = normalizar_derechos(empresa_pdf)
                         
-                        # Si hay empresas nuevas que no tienes en tu BD, les ponemos "Desconocido"
-                        df_op["Sector"] = df_op["Sector"].fillna("Pendiente de Clasificar")
-                        df_op["Subsector"] = df_op["Subsector"].fillna("Pendiente de Clasificar")
-                        df_op["Pais"] = df_op["Pais"].fillna("Desconocido")
-                        df_op["NombreING"] = df_op["NombreING"].fillna(df_op["Empresa_PDF"])
-                        
-                        # Reordenamos las columnas para que quede un Excel súper profesional
-                        columnas_finales = [
-                            "Fecha", "Operación", "NombreING", "ISIN", "Pais", "Sector", "Subsector", 
-                            "Títulos", "Precio", "Importe Op.", "Comisión ING", "Gastos Bolsa", 
-                            "Impuestos", "Comisión Cambio", "Importe Total", "Mercado", "Divisa / Cambio", 
-                            "NombreHacienda", "Archivo"
-                        ]
-                        df_op = df_op[columnas_finales]
+                        match = None
+                        if isin_op in db_isin:
+                            match = db_isin[isin_op]
+                        elif nombre_norm in db_nombre:
+                            match = db_nombre[nombre_norm]
+                            
+                        if match:
+                            sectores.append(match.get("Sector", "Pendiente de Clasificar"))
+                            subsectores.append(match.get("Subsector", "Pendiente de Clasificar"))
+                            paises.append(match.get("Pais", "Desconocido"))
+                            nombres_ing.append(match.get("NombreING", empresa_pdf))
+                            nombres_hac.append(match.get("NombreHacienda", ""))
+                        else:
+                            sectores.append("Pendiente de Clasificar")
+                            subsectores.append("Pendiente de Clasificar")
+                            paises.append("Desconocido")
+                            nombres_ing.append(empresa_pdf)
+                            nombres_hac.append(f"CODIGO: {isin_op}")
+
+                    df_op["Sector"] = sectores
+                    df_op["Subsector"] = subsectores
+                    df_op["Pais"] = paises
+                    df_op["NombreING"] = nombres_ing
+                    df_op["NombreHacienda"] = nombres_hac
+
+                    columnas_finales = [
+                        "Fecha", "Operación", "NombreING", "ISIN", "Pais", "Sector", "Subsector", 
+                        "Títulos", "Precio", "Importe Op.", "Comisión ING", "Gastos Bolsa", 
+                        "Impuestos", "Comisión Cambio", "Importe Total", "Mercado", "Divisa / Cambio", 
+                        "NombreHacienda", "Archivo"
+                    ]
+                    df_op = df_op[columnas_finales]
                 except Exception as e:
-                    st.warning("No se ha podido conectar a la Base de Datos. Generando Excel básico sin sectores...")
+                    st.warning("No se ha podido conectar a la Base de Datos. Generando Excel básico...")
             # ==========================================
 
             st.success(f"¡Se procesaron y cruzaron {len(df_op)} archivo(s) con éxito!")
-            
             df_op['Fecha_Temporal'] = pd.to_datetime(df_op['Fecha'], format='%d/%m/%Y', errors='coerce')
             df_op = df_op.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
             
-            # Fila de totales
             fila_totales = {col: "" for col in df_op.columns}
             fila_totales["Fecha"] = "TOTALES"
             cols_a_sumar_op = ["Importe Op.", "Comisión ING", "Gastos Bolsa", "Impuestos", "Comisión Cambio", "Importe Total"]
             for col in cols_a_sumar_op:
-                # Aseguramos que ignoramos los textos en blanco de las columnas nuevas
                 suma = df_op[col].apply(lambda x: euro_a_numero(str(x)) if pd.notnull(x) and x != "" else 0).sum()
                 fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
             
@@ -337,10 +372,6 @@ elif opcion == "🛒 Compras/Ventas a Excel":
             st.dataframe(df_op)
             csv_op = df_op.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv_op, file_name='operaciones_bolsa_enriquecido.csv', mime='text/csv')
-
-
-
-
 
 # ==========================================
 # 🚀 APLICACIÓN 3: RENOMBRADOR INTELIGENTE
@@ -366,45 +397,49 @@ elif opcion == "🗂️ Renombrador de PDFs":
                         
                         if texto:
                             fechas = re.findall(r"\d{2}/\d{2}/\d{4}", texto)
-                            
                             match_isin = re.search(r"([A-Z]{2}[A-Z0-9]{10})", texto)
                             match_tipo = re.search(r"\b(Compra|Venta)\b", texto, re.IGNORECASE)
                             
                             if match_isin and match_tipo and "Tipo de orden" in texto:
                                 es_trade = True
                                 tipo_operacion = match_tipo.group(1).capitalize()
-                                
-                                # 🎯 NUEVA LÓGICA DE FECHA: Buscamos la fecha que tiene la hora al lado (Fecha de ejecución)
                                 match_ejecucion = re.search(r"(\d{2}/\d{2}/\d{4})\s+\d{2}:\d{2}", texto)
                                 if match_ejecucion:
                                     fecha_ordenada = match_ejecucion.group(1)
                                 else:
-                                    # Si no hay hora, solemos coger la segunda fecha que aparece en el PDF
                                     fecha_ordenada = fechas[1] if len(fechas) >= 2 else (fechas[0] if fechas else "00000000")
                                 
-                                match_linea = re.search(rf"(\d[\d\.]*)\s+([A-Za-z0-9\.\-\&\' ]+?)\s+{match_isin.group(1)}", texto)
-                                if match_linea:
-                                    empresa = match_linea.group(2).strip()
-                                else:
-                                    empresa = match_isin.group(1)
+                                # 🔒 CANDADO HORIZONTAL EN EL RENOMBRADOR
+                                match_linea = re.search(rf"(\d[\d\.]*)[ \t]+([A-Za-z0-9\.\-\&\' ]+?)[ \t]+{match_isin.group(1)}", texto)
+                                empresa = match_linea.group(2).strip() if match_linea else match_isin.group(1)
                             else:
                                 es_trade = False
-                                # Los dividendos suelen usar la primera fecha que aparece
                                 fecha_ordenada = sorted(fechas, key=lambda f: f[6:] + f[3:5] + f[0:2])[0] if fechas else "00000000"
-                                
                                 empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Empresa")
                                 empresa = empresa.split("   ")[0].strip()
 
                             fecha_formateada = datetime.strptime(fecha_ordenada, "%d/%m/%Y").strftime("%Y%m%d") if fecha_ordenada != "00000000" else "00000000"
 
-                            empresa_limpia = re.sub(r'\(.*?\)', '', empresa) 
-                            empresa_limpia = re.sub(r'[^a-zA-Z0-9]', ' ', empresa_limpia) 
-                            empresa_limpia = "".join([palabra.capitalize() for palabra in empresa_limpia.split()])
+                            # 🕵️‍♂️ TRADUCTOR DE NOMBRES PARA EL PDF FINAL
+                            n_upper = empresa.upper()
+                            if n_upper.startswith("IBE.D"): empresa = "DerechosIberdrola"
+                            elif n_upper.startswith("VIS.D"): empresa = "DerechosViscofan"
+                            elif n_upper.startswith("VID.D"): empresa = "DerechosVidrala"
+                            elif n_upper.startswith("REP.D"): empresa = "DerechosRepsol"
+                            elif n_upper.startswith("TEF.D"): empresa = "DerechosTelefonica"
+                            elif n_upper.startswith("ACS.D"): empresa = "DerechosACS"
+                            elif n_upper.startswith("FER.D"): empresa = "DerechosFerrovial"
+                            elif n_upper.startswith("SAB.D"): empresa = "DerechosBancoSabadell"
+                            elif n_upper.startswith("ELE.D"): empresa = "DerechosEndesa"
+                            else:
+                                empresa_limpia = re.sub(r'\(.*?\)', '', empresa) 
+                                empresa_limpia = re.sub(r'[^a-zA-Z0-9]', ' ', empresa_limpia) 
+                                empresa = "".join([palabra.capitalize() for palabra in empresa_limpia.split()])
                             
                             if es_trade:
-                                nuevo_nombre = f"{fecha_formateada}-{tipo_operacion}{empresa_limpia}.pdf"
+                                nuevo_nombre = f"{fecha_formateada}-{tipo_operacion}{empresa}.pdf"
                             else:
-                                nuevo_nombre = f"{fecha_formateada}-Dividendo{empresa_limpia}.pdf"
+                                nuevo_nombre = f"{fecha_formateada}-Dividendo{empresa}.pdf"
                                 
                             archivo.seek(0)
                             zip_file.writestr(nuevo_nombre, archivo.read())
@@ -417,7 +452,6 @@ elif opcion == "🗂️ Renombrador de PDFs":
         texto_estado.empty()
         st.success("¡Todos los archivos procesables han sido empaquetados!")
         st.download_button(label="📦 Descargar ZIP con PDFs renombrados", data=zip_buffer.getvalue(), file_name="Movimientos_Organizados.zip", mime="application/zip")
-
 
 
 
