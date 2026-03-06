@@ -96,11 +96,10 @@ st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
 
 
 
-
 # ==========================================
 # 🚀 APLICACIÓN 1: DIVIDENDOS
 # ==========================================
-if opcion == "📄 Dividendos a Excel":
+if opcion == "📊 Dividendos a Excel":
     st.title("📄 Extractor de Dividendos a Excel")
     st.write("Sube tus PDFs de dividendos de ING y genera un Excel consolidado al instante.")
     archivos_pdf = st.file_uploader("Sube tus PDFs de Dividendos aquí", type=["pdf"], accept_multiple_files=True)
