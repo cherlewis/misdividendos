@@ -82,13 +82,13 @@ st.sidebar.write("Elige la herramienta que quieres usar:")
 opcion = st.sidebar.radio(
     "", 
     [
-        "📊 Cuadro de Mando (Dashboard)", # <--- Nueva pestaña estrella
+        "📊 Cuadro de Mando (Dashboard)",
+        "💸 Asistente de Renta Web", # <--- La nueva herramienta fiscal
         "📊 Dividendos a Excel", 
         "🛒 Compras/Ventas a Excel", 
         "🗂️ Renombrador de PDFs",
         "📄 Informe Fiscal (Div. y DRIPs)",
         "⚖️ Auditoría Hacienda vs ING",
-        "📉 Calculadora Plusvalías (Hacienda)",
         "🏢 Gestor de Empresas (DB)"
     ]
 )
@@ -1211,3 +1211,93 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                     st.rerun()
                 except Exception as e:
                     st.error(f"❌ Error al intentar borrar: {e}")
+
+
+
+
+# ==========================================
+# 🚀 APLICACIÓN 8: ASISTENTE DE RENTA WEB
+# ==========================================
+elif opcion == "💸 Asistente de Renta Web":
+    st.title("💸 Asistente Fiscal: Casillas de la Renta")
+    st.write("Sube tus PDFs de dividendos del año fiscal para calcular los importes exactos de las casillas.")
+    
+    archivos_renta = st.file_uploader("Sube todos tus PDFs de dividendos del año aquí", type=["pdf"], accept_multiple_files=True, key="renta")
+
+    if archivos_renta:
+        resumen_fiscal = []
+        with st.spinner("Calculando impuestos..."):
+            for archivo in archivos_renta:
+                try:
+                    with pdfplumber.open(archivo) as pdf:
+                        texto = pdf.pages[0].extract_text()
+                        if texto:
+                            # Reutilizamos nuestra lógica de extracción ultra-flexible
+                            def extraer_val(etiqueta, txt):
+                                patron = etiqueta + r".*?([\d\.,]+\s*[A-Z€$]{1,3})"
+                                res = re.search(patron, txt, re.IGNORECASE | re.DOTALL)
+                                return euro_a_numero(res.group(1)) if res else 0.0
+
+                            bruto = extraer_val("bruto", texto)
+                            ret_origen = extraer_val("origen", texto)
+                            ret_destino = extraer_val("destino", texto)
+                            if ret_destino == 0:
+                                ret_destino = extraer_val("Retención:", texto)
+
+                            # Identificamos si es nacional o internacional por la retención en origen
+                            es_extranjero = ret_origen > 0
+                            
+                            resumen_fiscal.append({
+                                "Bruto": bruto,
+                                "Ret_Origen": ret_origen,
+                                "Ret_Destino": ret_destino,
+                                "Es_Extranjero": es_extranjero
+                            })
+                except:
+                    continue
+
+        if resumen_fiscal:
+            df_fiscal = pd.DataFrame(resumen_fiscal)
+            
+            # --- CÁLCULOS PARA LAS CASILLAS ---
+            # Casilla 029: Suma de todos los brutos (Nacionales + Extranjeros)
+            total_bruto = df_fiscal["Bruto"].sum()
+            
+            # Casilla 029 (Retenciones): Solo las retenciones practicadas en España (Ret. Destino)
+            total_ret_espana = df_fiscal["Ret_Destino"].sum()
+            
+            # Casilla 588 (Doble Imposición): 
+            # Aquí la norma dice: Te deduces lo pagado fuera, pero con el límite del 15% del bruto.
+            # Lo calculamos línea a línea para ser exactos.
+            df_ext = df_fiscal[df_fiscal["Es_Extranjero"] == True].copy()
+            df_ext["Max_Deduccion"] = df_ext["Bruto"] * 0.15
+            df_ext["Deduccion_Real"] = df_ext[["Ret_Origen", "Max_Deduccion"]].min(axis=1)
+            
+            total_deduccion_588 = df_ext["Deduccion_Real"].sum()
+            total_bruto_extranjero = df_ext["Bruto"].sum()
+
+            # --- INTERFAZ VISUAL ---
+            st.success("¡Análisis fiscal completado!")
+            
+            col_f1, col_f2 = st.columns(2)
+            
+            with col_f1:
+                st.subheader("📝 Casilla 029")
+                st.info("Rendimientos del capital mobiliario")
+                st.metric("Ingresos íntegros (Bruto total)", f"{formato_numero_tabla(total_bruto)} €")
+                st.metric("Retenciones (Pagado en España)", f"{formato_numero_tabla(total_ret_espana)} €")
+
+            with col_f2:
+                st.subheader("🌍 Casilla 588")
+                st.info("Deducción por doble imposición internacional")
+                st.metric("Importe para deducir", f"{formato_numero_tabla(total_deduccion_588)} €")
+                st.caption(f"Calculado sobre un bruto extranjero de {formato_numero_tabla(total_bruto_extranjero)} €")
+
+            st.markdown("---")
+            
+            with st.expander("💡 ¿Cómo rellenar esto en Renta Web?"):
+                st.markdown(f"""
+                1. **En la Casilla 029:** Suma el importe de **{formato_numero_tabla(total_bruto)} €** en la columna de ingresos.
+                2. **En la misma Casilla 029:** En el apartado de retenciones, asegúrate de que figuren los **{formato_numero_tabla(total_ret_espana)} €**.
+                3. **En la Casilla 588:** Busca el apartado de 'Doble Imposición Internacional'. En 'Rentas incluidas en la base del ahorro' pon el bruto extranjero ({formatear_moneda(total_bruto_extranjero)}) y en 'Impuesto pagado en el extranjero' pon **{formato_numero_tabla(total_deduccion_588)} €**.
+                """)
