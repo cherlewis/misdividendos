@@ -97,18 +97,16 @@ st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
 
 
 
-
 # ==========================================
-# 🚀 APLICACIÓN 1: DIVIDENDOS Y DASHBOARD
+# 🚀 APLICACIÓN 1: DIVIDENDOS
 # ==========================================
-if opcion == "📊 Dividendos a Excel":
-    st.title("📊 Extractor de Dividendos y Dashboard")
-    st.write("Sube tus recibos de dividendos en PDF de ING para extraer los datos y ver tu resumen.")
-
-    archivos_pdf = st.file_uploader("Sube tus PDFs aquí", type=["pdf"], accept_multiple_files=True, key="div")
+if opcion == "📄 Dividendos a Excel":
+    st.title("📄 Extractor de Dividendos a Excel")
+    st.write("Sube tus PDFs de dividendos de ING y genera un Excel consolidado al instante.")
+    archivos_pdf = st.file_uploader("Sube tus PDFs de Dividendos aquí", type=["pdf"], accept_multiple_files=True)
 
     if archivos_pdf:
-        datos_extraidos = []
+        datos_dividendos = []
         total_archivos = len(archivos_pdf)
         barra_progreso = st.progress(0)
         texto_estado = st.empty()
@@ -117,104 +115,146 @@ if opcion == "📊 Dividendos a Excel":
             texto_estado.text(f"⏳ Procesando ({i+1}/{total_archivos}): {archivo.name}...")
             try:
                 with pdfplumber.open(archivo) as pdf:
-                    texto = pdf.pages[0].extract_text(layout=True) 
-                    if not texto: texto = pdf.pages[0].extract_text()
+                    texto = pdf.pages[0].extract_text()
                     
                     if texto:
-                        fechas = re.findall(r"\d{2}/\d{2}/\d{4}", texto)
-                        fecha_abono = sorted(fechas, key=lambda f: f[6:] + f[3:5] + f[0:2])[0] if fechas else "No encontrada"
+                        empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Empresa")
+                        if empresa != "No encontrado":
+                            empresa = empresa.split("   ")[0].strip()
 
-                        empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Desconocida").split("   ")[0].strip()
-                        concepto = f"DIVIDENDO ({empresa})"
-
-                        importe_titulo = buscar_dato([r"Importe por t[íi]tulo\s*:\s*([\d,]+)", r"([\d,]+)\s*€\s*Importe por t[íi]tulo"], texto)
-                        titulos = buscar_dato([r"N[úu]mero de t[íi]tulos\s*:\s*(\d+)", r"N[úu]mero de t[íi]tulos.*?(\d+)"], texto, "0")
-                        bruto = buscar_dato([r"Importe total bruto\s*:\s*([\d,]+)"], texto)
-                        ret_origen = buscar_dato([r"Retenci[óo]n en origen\s*:\s*([\d,]+)", r"Retenci[óo]n en origen\s*([\d,]+)"], texto)
-                        ret_destino = buscar_dato([r"Retenci[óo]n en destino\s*:\s*([\d,]+)", r"Retenci[óo]n\s*:\s*([\d,]+)"], texto)
-                        neto = buscar_dato([r"Importe total neto\s*:\s*([\d,]+)"], texto)
-
-                        pct_origen = calcular_porcentaje(ret_origen, bruto)
-                        pct_destino = calcular_porcentaje(ret_destino, bruto)
-                        ret_recuperable = calcular_retencion_recuperable(pct_origen, bruto, ret_origen)
+                        # Si es un "Dividendo Elección" (Scrip Dividend), lo limpiamos un poco
+                        if "DERECHOS" in empresa.upper() or "ELEC." in empresa.upper():
+                            empresa_limpia = re.sub(r'\(.*?\)', '', empresa)
+                            empresa_limpia = empresa_limpia.replace("DERECHOS", "").replace("ELEC.", "").strip()
+                            # Si se queda muy corto, igual es mejor no tocarlo mucho
+                            if len(empresa_limpia) > 2:
+                                empresa = empresa_limpia
+                            
+                        fecha_abono = buscar_dato([r"Fecha de abono:\s*(\d{2}/\d{2}/\d{4})", r"Fecha:\s*(\d{2}/\d{2}/\d{4})"], texto, "Fecha de abono")
+                        importe_bruto = buscar_dato([r"Importe bruto:\s*([\d,]+\s*[A-Z]{3})"], texto, "Importe Bruto")
+                        retencion_origen = buscar_dato([r"Retención en origen:\s*([\d,]+\s*[A-Z]{3})"], texto, "Ret. Origen", opcional=True)
+                        retencion_destino = buscar_dato([r"Retención en destino:\s*([\d,]+\s*[A-Z]{3})", r"Retención:\s*([\d,]+\s*[A-Z]{3})"], texto, "Ret. Destino")
+                        importe_neto = buscar_dato([r"Importe líquido:\s*([\d,]+\s*[A-Z]{3})", r"Importe neto:\s*([\d,]+\s*[A-Z]{3})"], texto, "Importe Líquido")
                         
-                        cuenta_abono = buscar_dato([r"(1465\s*0100\s*93\s*\d{10})"], texto, "N/A")
-                        cuenta_valores = buscar_dato([r"(91\s*\d{10})"], texto, "0")
+                        cambio_divisa = buscar_dato([r"Cambio:\s*([\d,]+)"], texto, "Divisa / Cambio", opcional=True)
+                        if cambio_divisa == "0,00 EUR":
+                            cambio_divisa = "1,000"
+                        
+                        titulos = buscar_dato([r"Nº de títulos:\s*([\d\.]+)"], texto, "Títulos")
 
-                        datos_extraidos.append({
-                            "Fecha Abono": fecha_abono, "Concepto": concepto, "Importe Neto (€)": neto,
-                            "Retención en origen (€)": ret_origen, "% retención en origen": pct_origen,
-                            "Retención en destino (€)": ret_destino, "% retención en destino": pct_destino,
-                            "Importe Bruto (€)": bruto, "Empresa": empresa, "Cuenta de Valores": cuenta_valores,
-                            "Número de títulos": titulos, "Importe por título (€)": importe_titulo, "Cuenta Abono": cuenta_abono,
-                            "Retención Recuperable (Max 15%) (€)": ret_recuperable
+                        datos_dividendos.append({
+                            "Fecha": fecha_abono,
+                            "Empresa_PDF": empresa,
+                            "Títulos": titulos,
+                            "Importe Bruto": importe_bruto,
+                            "Ret. Origen": retencion_origen,
+                            "Ret. Destino": retencion_destino,
+                            "Importe Neto": importe_neto,
+                            "Divisa / Cambio": cambio_divisa,
+                            "Archivo": archivo.name
                         })
             except Exception as e:
                 st.warning(f"⚠️ Error al procesar '{archivo.name}'. Se ha omitido.")
             
-            gc.collect() 
+            gc.collect()
             barra_progreso.progress((i + 1) / total_archivos)
 
         texto_estado.empty()
 
-        if datos_extraidos:
-            st.success(f"¡Se procesaron {len(datos_extraidos)} archivo(s) con éxito!")
-            df = pd.DataFrame(datos_extraidos)
-            df['Fecha_Temporal'] = pd.to_datetime(df['Fecha Abono'], format='%d/%m/%Y', errors='coerce')
-            df = df.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
-            
-            st.markdown("---")
-            st.subheader("📈 Resumen de tus Dividendos")
-            df['num_bruto'] = df['Importe Bruto (€)'].apply(euro_a_numero)
-            df['num_neto'] = df['Importe Neto (€)'].apply(euro_a_numero)
-            df['num_ret_origen'] = df['Retención en origen (€)'].apply(euro_a_numero)
-            df['num_ret_destino'] = df['Retención en destino (€)'].apply(euro_a_numero)
-            df['num_ret_recup'] = df['Retención Recuperable (Max 15%) (€)'].apply(euro_a_numero) # Añadido para sumar recuperable
-            
-            total_bruto = df['num_bruto'].sum()
-            total_impuestos = df['num_ret_origen'].sum() + df['num_ret_destino'].sum()
-            total_neto = df['num_neto'].sum()
-            
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Bruto Generado", formatear_moneda(total_bruto))
-            col2.metric("Impuestos Pagados (Total)", formatear_moneda(total_impuestos))
-            col3.metric("Neto a la Cuenta", formatear_moneda(total_neto))
-            
-            st.write("")
-            st.subheader("🌍 Desglose Fiscal (Nacional vs Extranjero)")
-            def agrupar_pais(pct):
-                if pct in ["15%", "25%", "26,375%"]: return "Extranjero (USA, Francia, Alemania)"
-                elif pct == "0%": return "España (Nacional)"
-                else: return "Otros"
-            df['Grupo_Pais'] = df['% retención en origen'].apply(agrupar_pais)
-            
-            cols_paises = st.columns(2)
-            for i, grupo in enumerate(["España (Nacional)", "Extranjero (USA, Francia, Alemania)"]):
-                df_grupo = df[df['Grupo_Pais'] == grupo]
-                with cols_paises[i]:
-                    st.markdown(f"**{grupo}**")
-                    st.write(f"💰 Bruto Total: **{formatear_moneda(df_grupo['num_bruto'].sum())}**")
-                    st.write(f"🏛️ Ret. en Origen Total: **{formatear_moneda(df_grupo['num_ret_origen'].sum())}**")
-                    # NUEVO: Si es el grupo extranjero, mostramos la retención recuperable
-                    if "Extranjero" in grupo:
-                        st.write(f"🔄 Ret. Recuperable (Máx 15%): **{formatear_moneda(df_grupo['num_ret_recup'].sum())}**")
+        if datos_dividendos:
+            df = pd.DataFrame(datos_dividendos)
+
+            # ==========================================
+            # 🧠 LA MAGIA: CRUCE CON BASE DE DATOS (POR NOMBRE)
+            # ==========================================
+            with st.spinner("🧠 Cruzando dividendos con tu Base de Datos en Supabase..."):
+                try:
+                    from supabase import create_client, Client
+                    url: str = st.secrets["SUPABASE_URL"]
+                    key: str = st.secrets["SUPABASE_KEY"]
+                    supabase: Client = create_client(url, key)
                     
-            st.markdown("---")
-            df = df.drop(columns=['num_bruto', 'num_neto', 'num_ret_origen', 'num_ret_destino', 'Grupo_Pais', 'num_ret_recup'])
-            
+                    respuesta = supabase.table("Empresas_Table").select("ISIN, NombreING, Pais, Sector, Subsector, NombreHacienda").execute()
+                    df_db = pd.DataFrame(respuesta.data)
+                    
+                    if not df_db.empty:
+                        # Diccionario de búsqueda por nombre (Ej: "COCA COLA CO": {diccionario_datos})
+                        # Guardamos los nombres de la BD en mayúsculas para que el cruce sea más fácil
+                        db_nombre = {str(row["NombreING"]).upper(): row.to_dict() for _, row in df_db.iterrows()}
+                    else:
+                        db_nombre = {}
+
+                    sectores, subsectores, paises, nombres_ing, nombres_hac, isins = [], [], [], [], [], []
+
+                    for _, row in df.iterrows():
+                        empresa_pdf = str(row["Empresa_PDF"]).upper().strip()
+                        
+                        match = None
+                        # Buscamos si el nombre del PDF (ej: "3M CO") está en nuestra Base de Datos
+                        if empresa_pdf in db_nombre:
+                            match = db_nombre[empresa_pdf]
+                        else:
+                            # Búsqueda un poco más "flexible" (por si hay espacios extra)
+                            for nombre_db, datos_db in db_nombre.items():
+                                if nombre_db in empresa_pdf or empresa_pdf in nombre_db:
+                                    match = datos_db
+                                    break
+                            
+                        if match:
+                            sectores.append(match.get("Sector", "Pendiente de Clasificar"))
+                            subsectores.append(match.get("Subsector", "Pendiente de Clasificar"))
+                            paises.append(match.get("Pais", "Desconocido"))
+                            isins.append(match.get("ISIN", ""))
+                            nombres_ing.append(match.get("NombreING", row["Empresa_PDF"]))
+                            nombres_hac.append(match.get("NombreHacienda", ""))
+                        else:
+                            sectores.append("Pendiente de Clasificar")
+                            subsectores.append("Pendiente de Clasificar")
+                            paises.append("Desconocido")
+                            isins.append("")
+                            nombres_ing.append(row["Empresa_PDF"])
+                            nombres_hac.append("Revisar")
+
+                    df["Sector"] = sectores
+                    df["Subsector"] = subsectores
+                    df["Pais"] = paises
+                    df["ISIN"] = isins
+                    df["NombreING"] = nombres_ing
+                    df["NombreHacienda"] = nombres_hac
+
+                    # Reordenamos columnas para un Excel perfecto
+                    columnas_finales = [
+                        "Fecha", "NombreING", "ISIN", "Pais", "Sector", "Subsector", 
+                        "Títulos", "Importe Bruto", "Ret. Origen", "Ret. Destino", 
+                        "Importe Neto", "Divisa / Cambio", "NombreHacienda", "Archivo"
+                    ]
+                    df = df[columnas_finales]
+                except Exception as e:
+                    st.error(f"⚠️ Error técnico real del cruce: {e}")
+                    st.warning("Generando Excel básico sin sectores...")
+            # ==========================================
+
+            st.success(f"¡Se procesaron y cruzaron {len(df)} archivo(s) con éxito!")
+
+            df['Fecha_Temporal'] = pd.to_datetime(df['Fecha'], format='%d/%m/%Y', errors='coerce')
+            df = df.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
+
             fila_totales = {col: "" for col in df.columns}
-            fila_totales["Fecha Abono"] = "TOTALES"
-            cols_a_sumar = ["Importe Neto (€)", "Retención en origen (€)", "Retención en destino (€)", "Importe Bruto (€)", "Retención Recuperable (Max 15%) (€)"]
+            fila_totales["Fecha"] = "TOTALES"
+            cols_a_sumar = ["Importe Bruto", "Ret. Origen", "Ret. Destino", "Importe Neto"]
             for col in cols_a_sumar:
-                suma = df[col].apply(euro_a_numero).sum()
-                fila_totales[col] = formato_numero_tabla(suma)
+                suma = df[col].apply(lambda x: euro_a_numero(str(x)) if pd.notnull(x) and x != "" and x != "0,00 EUR" else 0).sum()
+                fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
             
             df = pd.concat([df, pd.DataFrame([fila_totales])], ignore_index=True)
-            
-            st.subheader("📋 Tabla de Datos Detallada")
+
             st.dataframe(df)
             csv = df.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar Excel (.csv)", data=csv, file_name='dividendos.csv', mime='text/csv')
+            st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv, file_name='dividendos_enriquecidos.csv', mime='text/csv')
+
+
+
+
 
 
 
