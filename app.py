@@ -801,15 +801,15 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
         st.error(f"⚠️ Error de conexión: {e}")
         st.stop()
 
-    # 2. Función para leer los datos (AQUÍ CAMBIAMOS A NombreING)
+    # 2. Función para leer los datos
     def cargar_empresas():
         respuesta = supabase.table("Empresas_Table").select("*").order("NombreING").execute()
         return pd.DataFrame(respuesta.data)
 
     df_empresas = cargar_empresas()
 
-    # 3. Interfaz con 4 Pestañas
-    tab1, tab2, tab3, tab4 = st.tabs(["➕ Añadir", "✏️ Editar", "📋 Ver Tabla", "🔄 Importar / Exportar"])
+    # 3. Interfaz con 5 Pestañas (¡Añadida la pestaña de Peligro!)
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["➕ Añadir", "✏️ Editar", "📋 Ver Tabla", "🔄 Importar / Exportar", "🚨 Peligro"])
 
     # --- PESTAÑA 1: AÑADIR ---
     with tab1:
@@ -830,7 +830,7 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                 if nombre_add and isin_add:
                     nueva_empresa = {
                         "ISIN": isin_add, 
-                        "NombreING": nombre_add, # <-- ACTULIZADO AQUÍ
+                        "NombreING": nombre_add,
                         "NombreHacienda": nombre_hac_add,
                         "Pais": pais_add, 
                         "Sector": sector_add, 
@@ -838,6 +838,8 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                     }
                     supabase.table("Empresas_Table").insert(nueva_empresa).execute()
                     st.success(f"✅ ¡{nombre_add} guardada correctamente!")
+                    import time
+                    time.sleep(2)
                     st.rerun()
                 else:
                     st.warning("⚠️ El Nombre en ING y el ISIN son obligatorios.")
@@ -846,7 +848,6 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
     with tab2:
         st.subheader("Editar datos de una empresa")
         if not df_empresas.empty:
-            # Buscamos por la columna NombreING
             empresa_seleccionada = st.selectbox("Selecciona la empresa:", df_empresas['NombreING'].tolist())
             datos_actuales = df_empresas[df_empresas['NombreING'] == empresa_seleccionada].iloc[0]
 
@@ -854,7 +855,7 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                 col1, col2 = st.columns(2)
                 with col1:
                     isin_ed = st.text_input("ISIN", value=datos_actuales.get('ISIN', ''))
-                    nombre_ed = st.text_input("Nombre en ING", value=datos_actuales.get('NombreING', '')) # <-- ACTULIZADO AQUÍ
+                    nombre_ed = st.text_input("Nombre en ING", value=datos_actuales.get('NombreING', ''))
                     nombre_hac_ed = st.text_input("Nombre en Hacienda", value=datos_actuales.get('NombreHacienda', '') or '')
                 with col2:
                     pais_ed = st.text_input("País", value=datos_actuales.get('Pais', '') or '')
@@ -865,7 +866,7 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                 if submit_edit:
                     cambios = {
                         "ISIN": isin_ed, 
-                        "NombreING": nombre_ed, # <-- ACTULIZADO AQUÍ
+                        "NombreING": nombre_ed,
                         "NombreHacienda": nombre_hac_ed,
                         "Pais": pais_ed, 
                         "Sector": sector_ed, 
@@ -873,6 +874,8 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                     }
                     supabase.table("Empresas_Table").update(cambios).eq("id", str(datos_actuales['id'])).execute()
                     st.success(f"✅ ¡Datos de {nombre_ed} actualizados!")
+                    import time
+                    time.sleep(2)
                     st.rerun()
         else:
             st.info("No hay empresas en la base de datos todavía.")
@@ -881,15 +884,13 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
     with tab3:
         st.subheader("Base de Datos Actual")
         if not df_empresas.empty:
-            # Actualizamos la vista de la tabla
             columnas_mostrar = ["ISIN", "NombreING", "Pais", "Sector", "Subsector", "NombreHacienda"]
             st.dataframe(df_empresas[columnas_mostrar], use_container_width=True)
             st.metric("Total de Empresas", len(df_empresas))
         else:
             st.write("La base de datos está vacía.")
 
-
-# --- PESTAÑA 4: IMPORTAR / EXPORTAR ---
+    # --- PESTAÑA 4: IMPORTAR / EXPORTAR ---
     with tab4:
         col_imp, col_exp = st.columns(2)
         
@@ -917,7 +918,6 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                     st.dataframe(df_import)
                     
                     if st.button("🚀 Confirmar e Importar / Actualizar"):
-                        # 1. Hacemos un "mapa" de las empresas que ya tienes (Nombre -> ID)
                         if not df_empresas.empty:
                             empresas_existentes = dict(zip(df_empresas['NombreING'], df_empresas['id']))
                         else:
@@ -930,12 +930,8 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                         for idx, row in df_import.iterrows():
                             nombre = row.get('NombreING', '')
                             registro = row.to_dict()
-                            
-                            # Quitamos la columna 'id' si por casualidad viene en el CSV
                             registro.pop('id', None)
 
-                            # MAGIA ANTI-DUPLICADOS: Si la empresa ya está en la DB, le inyectamos su ID interno.
-                            # Al mandarle el ID, Supabase dice: "Ah, ya existe, la actualizo (Upsert)".
                             if nombre in empresas_existentes:
                                 registro['id'] = int(empresas_existentes[nombre])
                                 actualizados += 1
@@ -944,33 +940,30 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                                 
                             registros_preparados.append(registro)
 
-                        # 2. Hacemos el Upsert masivo
                         supabase.table("Empresas_Table").upsert(registros_preparados).execute()
                         
-                        # 3. Mensaje chivato de éxito
+                        st.success(f"✅ ¡Proceso completado! Se han añadido {nuevos} nuevas empresas y actualizado {actualizados} existentes.")
                         import time
-                        st.success(f"✅ ¡Proceso completado! Se han añadido {nuevos} nuevas empresas y se han actualizado {actualizados} que ya existían.")
-                        time.sleep(4) # Esperamos 4 segundos para que lo leas
+                        time.sleep(4) 
                         st.rerun()
                 except Exception as e:
                     st.error(f"❌ Error al leer o importar. Detalles: {e}")
 
-        # ==========================================
-        # 🚨 ZONA DE PELIGRO: VACIAR BASE DE DATOS
-        # ==========================================
-        st.divider()
+    # --- PESTAÑA 5: ZONA DE PELIGRO ---
+    with tab5:
         st.subheader("⚠️ Zona de Peligro")
-        with st.expander("Ver opciones para borrar la base de datos"):
-            st.warning("🚨 ¡ATENCIÓN! Si pulsas este botón, se borrarán absolutamente todos los registros de tu base de datos en la nube. Te recomendamos hacer una 'Copia de Seguridad' antes.")
+        st.write("Opciones destructivas para el mantenimiento de tu base de datos.")
+        
+        with st.expander("Desplegar opciones para borrar la base de datos"):
+            st.warning("🚨 ¡ATENCIÓN! Si pulsas este botón, se borrarán absolutamente todos los registros de tu base de datos en la nube. Te recomendamos hacer una 'Copia de Seguridad' en la pestaña anterior antes de continuar.")
             
-            # Usamos type="primary" para que el botón salga en rojo/destacado
             if st.button("🗑️ SÍ, BORRAR TODA LA BASE DE DATOS", type="primary"):
                 try:
-                    # Borramos todos los registros cuyo ID sea mayor a 0 (es decir, todos)
+                    # Borramos todos los registros con ID mayor a 0
                     supabase.table("Empresas_Table").delete().gt("id", 0).execute()
                     
-                    import time
                     st.success("✅ ¡Base de datos vaciada por completo!")
+                    import time
                     time.sleep(3)
                     st.rerun()
                 except Exception as e:
