@@ -97,7 +97,6 @@ st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
 
 
 
-
 # ==========================================
 # 🚀 APLICACIÓN 1: DIVIDENDOS
 # ==========================================
@@ -117,8 +116,8 @@ if opcion == "📊 Dividendos a Excel":
             try:
                 import pdfplumber
                 with pdfplumber.open(archivo) as pdf:
-                    texto = pdf.pages[0].extract_text(layout=True)
-                    if not texto: texto = pdf.pages[0].extract_text()
+                    # 🔧 CORRECCIÓN: Quitamos el layout=True. Para los dividendos la lectura estándar es mucho mejor.
+                    texto = pdf.pages[0].extract_text()
                     
                     if texto:
                         empresa = buscar_dato([r"Valor:\s*(.+?)(?=\s{2,}|$)", r"REALTY INCOME.*|VIDRALA.*"], texto, "Empresa")
@@ -132,7 +131,6 @@ if opcion == "📊 Dividendos a Excel":
                             if len(empresa_limpia) > 2:
                                 empresa = empresa_limpia
                             
-                        # 🔧 CORRECCIÓN: Quitamos el 'opcional=True' que rompía el código y ponemos valores por defecto limpios
                         fecha_abono = buscar_dato([r"Fecha de abono:\s*(\d{2}/\d{2}/\d{4})", r"Fecha:\s*(\d{2}/\d{2}/\d{4})"], texto, "00/00/0000")
                         importe_bruto = buscar_dato([r"Importe bruto:\s*([\d,]+\s*[A-Z]{3})"], texto, "0,00 EUR")
                         retencion_origen = buscar_dato([r"Retención en origen:\s*([\d,]+\s*[A-Z]{3})"], texto, "0,00 EUR")
@@ -251,7 +249,6 @@ if opcion == "📊 Dividendos a Excel":
             st.dataframe(df)
             csv = df.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv, file_name='dividendos_enriquecidos.csv', mime='text/csv')
-
 
 
 
