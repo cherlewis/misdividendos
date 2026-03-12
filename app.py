@@ -1129,7 +1129,7 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
     with tab3:
         st.subheader("Base de Datos Actual")
         if not df_empresas.empty:
-            columnas_mostrar = ["ISIN", "NombreING", "Pais", "Sector", "Subsector", "NombreHacienda"]
+            columnas_mostrar = ["ISIN", "NombreING", "Pais", "Sector", "Subsector", "NombreHacienda", "Capitalizacion", "Ticker", "MonedaCotizacion"]
             st.dataframe(df_empresas[columnas_mostrar], use_container_width=True)
             st.metric("Total de Empresas", len(df_empresas))
         else:
