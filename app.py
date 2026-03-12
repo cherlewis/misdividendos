@@ -117,7 +117,7 @@ if opcion == "📊 Cuadro de Mando (Dashboard)":
         supabase: Client = create_client(url, key)
         
         with st.spinner("Cargando datos estratégicos..."):
-            respuesta = supabase.table("Empresas_Table").select("Sector, Subsector, Pais, NombreING").execute()
+            respuesta = supabase.table("Empresas").select("Sector, Subsector, Pais, NombreING").execute()
             df_dash = pd.DataFrame(respuesta.data)
 
         if not df_dash.empty:
