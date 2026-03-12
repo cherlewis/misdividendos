@@ -280,7 +280,7 @@ if opcion == "📊 Dividendos a Excel":
                     url: str = st.secrets["SUPABASE_URL"]
                     key: str = st.secrets["SUPABASE_KEY"]
                     supabase: Client = create_client(url, key)
-                    respuesta = supabase.table("Empresas_Table").select("ISIN, NombreING, Pais, Sector, Subsector, NombreHacienda").execute()
+                    respuesta = supabase.table("Empresas").select("ISIN, NombreING, Pais, Sector, Subsector, NombreHacienda").execute()
                     df_db = pd.DataFrame(respuesta.data)
                     db_nombre = {str(row["NombreING"]).upper().strip(): row.to_dict() for _, row in df_db.iterrows()} if not df_db.empty else {}
 
@@ -428,7 +428,7 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                     key: str = st.secrets["SUPABASE_KEY"]
                     supabase: Client = create_client(url, key)
                     
-                    respuesta = supabase.table("Empresas_Table").select("ISIN, NombreING, Pais, Sector, Subsector, NombreHacienda").execute()
+                    respuesta = supabase.table("Empresas").select("ISIN, NombreING, Pais, Sector, Subsector, NombreHacienda").execute()
                     df_db = pd.DataFrame(respuesta.data)
                     
                     if not df_db.empty:
@@ -1048,7 +1048,7 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
 
     # 2. Función para leer los datos
     def cargar_empresas():
-        respuesta = supabase.table("Empresas_Table").select("*").order("NombreING").execute()
+        respuesta = supabase.table("Empresas").select("*").order("NombreING").execute()
         return pd.DataFrame(respuesta.data)
 
     df_empresas = cargar_empresas()
@@ -1081,7 +1081,7 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                         "Sector": sector_add, 
                         "Subsector": subsector_add
                     }
-                    supabase.table("Empresas_Table").insert(nueva_empresa).execute()
+                    supabase.table("Empresas").insert(nueva_empresa).execute()
                     st.success(f"✅ ¡{nombre_add} guardada correctamente!")
                     import time
                     time.sleep(2)
@@ -1117,7 +1117,7 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                         "Sector": sector_ed, 
                         "Subsector": subsector_ed
                     }
-                    supabase.table("Empresas_Table").update(cambios).eq("id", str(datos_actuales['id'])).execute()
+                    supabase.table("Empresas").update(cambios).eq("id", str(datos_actuales['id'])).execute()
                     st.success(f"✅ ¡Datos de {nombre_ed} actualizados!")
                     import time
                     time.sleep(2)
@@ -1185,7 +1185,7 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                                 
                             registros_preparados.append(registro)
 
-                        supabase.table("Empresas_Table").upsert(registros_preparados).execute()
+                        supabase.table("Empresas").upsert(registros_preparados).execute()
                         
                         st.success(f"✅ ¡Proceso completado! Se han añadido {nuevos} nuevas empresas y actualizado {actualizados} existentes.")
                         import time
@@ -1205,7 +1205,7 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
             if st.button("🗑️ SÍ, BORRAR TODA LA BASE DE DATOS", type="primary"):
                 try:
                     # Borramos todos los registros con ID mayor a 0
-                    supabase.table("Empresas_Table").delete().gt("id", 0).execute()
+                    supabase.table("Empresas").delete().gt("id", 0).execute()
                     
                     st.success("✅ ¡Base de datos vaciada por completo!")
                     import time
