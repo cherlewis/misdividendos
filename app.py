@@ -1003,14 +1003,18 @@ elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
             csv_informe = df_informe.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel (Formato AEAT)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
 
+
+
 # ==========================================
 # 🚀 APLICACIÓN 5: AUDITORÍA HACIENDA VS ING
 # ==========================================
 elif opcion == "⚖️ Auditoría Hacienda vs ING":
-    st.title("⚖️ Auditor Inteligente (Basado en Importes)")
+    st.title("⚖️ Auditor Inteligente y Subida a DB")
     st.markdown("""**¡El fin del caos con los nombres y los ISINs!**
-    Como Hacienda y los bancos usan nombres distintos para las acciones extranjeras, este auditor cruza los datos usando **el importe exacto del dividendo**. 
-    Si Hacienda dice que cobraste 88,40€ y ING dice que Logista te pagó 88,40€, el sistema los unirá automáticamente.""")
+    Cruza automáticamente tus dividendos de ING con el borrador de Hacienda y guárdalos de forma segura en tu base de datos.""")
+
+    # 📅 PEDIMOS EL AÑO FISCAL PARA LA BASE DE DATOS
+    ejercicio_fiscal = st.number_input("📅 ¿De qué Año Fiscal es esta auditoría?", min_value=2020, max_value=2050, value=2024)
 
     col1, col2 = st.columns(2)
     with col1:
@@ -1023,30 +1027,42 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
     if archivo_ing and archivo_aeat:
         try:
             df_ing = pd.read_csv(archivo_ing, sep=";")
-            df_ing = df_ing[df_ing["Fecha Abono"] != "TOTALES"]
+            if "Fecha Abono" in df_ing.columns:
+                df_ing = df_ing[df_ing["Fecha Abono"] != "TOTALES"]
             
             if archivo_aeat.name.endswith('.csv'):
                 df_aeat = pd.read_csv(archivo_aeat, sep=None, engine='python')
             else:
                 df_aeat = pd.read_excel(archivo_aeat, engine='openpyxl')
 
+            # Detección de columnas de AEAT
             col_bruto_aeat = "Importe Íntegro" if "Importe Íntegro" in df_aeat.columns else df_aeat.columns[7]
             col_ret_aeat = "Retenciones" if "Retenciones" in df_aeat.columns else df_aeat.columns[9]
             col_nom_aeat = "Nombre Emisor" if "Nombre Emisor" in df_aeat.columns else df_aeat.columns[2]
 
             st.success("¡Archivos cargados! Cruzando los datos por coincidencia de importes...")
 
+            # ---------------------------------------------------------
+            # PREPARACIÓN ING (Ahora arrastramos fecha y ret_origen)
+            # ---------------------------------------------------------
             df_ing['Bruto_Num'] = df_ing['Importe Bruto (€)'].apply(euro_a_numero).round(2)
-            df_ing['Ret_Num'] = df_ing['Retención en destino (€)'].apply(euro_a_numero).round(2)
+            df_ing['Ret_Dest_Num'] = df_ing['Retención en destino (€)'].apply(euro_a_numero).round(2)
+            df_ing['Ret_Orig_Num'] = df_ing['Retención en origen (€)'].apply(euro_a_numero).round(2)
             
             df_ing = df_ing[df_ing['Bruto_Num'] > 0]
 
             ing_agrup = df_ing.groupby('Bruto_Num').agg({
                 'Empresa': lambda x: ' + '.join(x.unique()),
-                'Ret_Num': 'sum'
+                'Ret_Dest_Num': 'sum',
+                'Ret_Orig_Num': 'sum',
+                'Fecha Abono': 'first' # Capturamos la primera fecha
             }).reset_index()
-            ing_agrup.rename(columns={'Bruto_Num': 'Importe Bruto', 'Empresa': 'Empresa(s) en ING', 'Ret_Num': 'Retención ING'}, inplace=True)
+            
+            ing_agrup.rename(columns={'Bruto_Num': 'Importe Bruto', 'Empresa': 'Empresa(s) en ING'}, inplace=True)
 
+            # ---------------------------------------------------------
+            # PREPARACIÓN HACIENDA
+            # ---------------------------------------------------------
             df_aeat['Bruto_Num'] = df_aeat[col_bruto_aeat].apply(euro_a_numero).round(2)
             df_aeat['Ret_Num'] = df_aeat[col_ret_aeat].apply(euro_a_numero).round(2)
             df_aeat = df_aeat[df_aeat['Bruto_Num'] > 0]
@@ -1061,12 +1077,15 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
             }).reset_index()
             aeat_agrup.rename(columns={'Bruto_Num': 'Importe Bruto', 'Nombre Limpio': 'Emisor(es) en Hacienda', 'Ret_Num': 'Retención AEAT'}, inplace=True)
 
+            # ---------------------------------------------------------
+            # EL CRUCE MÁGICO
+            # ---------------------------------------------------------
             df_cruce = pd.merge(ing_agrup, aeat_agrup, on='Importe Bruto', how='outer').fillna(0)
 
             df_cruce['Empresa(s) en ING'] = df_cruce['Empresa(s) en ING'].replace(0, "❌ No consta en tu ING")
             df_cruce['Emisor(es) en Hacienda'] = df_cruce['Emisor(es) en Hacienda'].replace(0, "❌ Falta en tu Borrador")
             
-            df_cruce['Dif. Retención'] = (df_cruce['Retención ING'] - df_cruce['Retención AEAT']).round(2)
+            df_cruce['Dif. Retención'] = (df_cruce['Ret_Dest_Num'] - df_cruce['Retención AEAT']).round(2)
 
             def determinar_estado(row):
                 if row['Empresa(s) en ING'] == "❌ No consta en tu ING": return "🔴 Añadido por Hacienda"
@@ -1076,13 +1095,15 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
 
             df_cruce['Estado'] = df_cruce.apply(determinar_estado, axis=1)
 
+            # ---------------------------------------------------------
+            # TABLA VISUAL
+            # ---------------------------------------------------------
             df_cruce['Importe Bruto (€)'] = df_cruce['Importe Bruto'].apply(formato_numero_tabla)
-            df_cruce['Ret. ING (€)'] = df_cruce['Retención ING'].apply(formato_numero_tabla)
+            df_cruce['Ret. ING (€)'] = df_cruce['Ret_Dest_Num'].apply(formato_numero_tabla)
             df_cruce['Ret. AEAT (€)'] = df_cruce['Retención AEAT'].apply(formato_numero_tabla)
             df_cruce['Diferencia Ret. (€)'] = df_cruce['Dif. Retención'].apply(formato_numero_tabla)
 
             df_cruce = df_cruce.sort_values(by='Estado', ascending=False)
-            
             df_final = df_cruce[['Importe Bruto (€)', 'Empresa(s) en ING', 'Emisor(es) en Hacienda', 'Ret. ING (€)', 'Ret. AEAT (€)', 'Diferencia Ret. (€)', 'Estado']]
 
             st.markdown("---")
@@ -1097,9 +1118,92 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
                 ),
                 use_container_width=True
             )
+            
+            st.markdown("---")
+            
+            # ---------------------------------------------------------------------
+            # 🎛️ BOTONES DE ACCIÓN (EXCEL Y SUPABASE)
+            # ---------------------------------------------------------------------
+            col_excel, col_db = st.columns(2)
+            
+            with col_excel:
+                csv_audit = df_final.to_csv(index=False, sep=";").encode('utf-8-sig')
+                st.download_button(label="⬇️ Descargar Excel Auditoría", data=csv_audit, file_name=f'auditoria_dividendos_{ejercicio_fiscal}.csv', mime='text/csv', use_container_width=True)
+
+            with col_db:
+                if st.button("☁️ Guardar en MovimientosDividendos (DB)", type="primary", use_container_width=True):
+                    with st.spinner("Comprobando duplicados y guardando en Supabase..."):
+                        try:
+                            from supabase import create_client, Client
+                            url = st.secrets["SUPABASE_URL"]
+                            key = st.secrets["SUPABASE_KEY"]
+                            supabase = create_client(url, key)
+
+                            # 1. Traer datos para evitar duplicados del mismo año fiscal
+                            res_db = supabase.table("MovimientosDividendos").select("ejercicio_fiscal, bruto_ing").eq("ejercicio_fiscal", ejercicio_fiscal).execute()
+                            
+                            db_existentes = set()
+                            if res_db.data:
+                                for row_db in res_db.data:
+                                    # Nuestra Huella Digital: Año + Importe Bruto
+                                    imp_db = round(float(row_db.get("bruto_ing", 0)), 2)
+                                    firma = f"{row_db.get('ejercicio_fiscal')}_{imp_db}"
+                                    db_existentes.add(firma)
+
+                            # 2. Preparar los registros mapeados a tu Schema
+                            registros_a_subir = []
+                            
+                            for idx, row in df_cruce.iterrows():
+                                bruto = round(float(row["Importe Bruto"]), 2)
+                                firma_actual = f"{ejercicio_fiscal}_{bruto}"
+                                
+                                if firma_actual not in db_existentes:
+                                    
+                                    # Convertimos la fecha. Si pone "Resumen 2024", la dejamos vacía en SQL (None)
+                                    fecha_sql = None
+                                    try:
+                                        fecha_str = str(row.get("Fecha Abono", ""))
+                                        if "/" in fecha_str:
+                                            fecha_sql = datetime.strptime(fecha_str, "%d/%m/%Y").strftime("%Y-%m-%d")
+                                    except:
+                                        pass
+                                        
+                                    # Mezclamos los nombres si uno de ellos falla
+                                    empresa_final = row['Empresa(s) en ING']
+                                    if "❌" in empresa_final:
+                                        empresa_final = row['Emisor(es) en Hacienda']
+
+                                    registros_a_subir.append({
+                                        "fecha": fecha_sql,
+                                        "empresa": empresa_final[:250], 
+                                        "bruto_ing": bruto,
+                                        "ret_origen_ing": round(float(row.get("Ret_Orig_Num", 0)), 2),
+                                        "ret_destino_ing": round(float(row.get("Ret_Dest_Num", 0)), 2),
+                                        "bruto_aeat": bruto, 
+                                        "ret_aeat": round(float(row.get("Retención AEAT", 0)), 2),
+                                        "diferencia": round(float(row.get("Dif. Retención", 0)), 2),
+                                        "estado": str(row["Estado"]),
+                                        "ejercicio_fiscal": int(ejercicio_fiscal)
+                                    })
+
+                            # 3. Subida a la nube
+                            if registros_a_subir:
+                                supabase.table("MovimientosDividendos").insert(registros_a_subir).execute()
+                                st.success(f"✅ ¡Se han guardado {len(registros_a_subir)} dividendos auditados de {ejercicio_fiscal} en la base de datos!")
+                                st.balloons()
+                            else:
+                                st.info(f"ℹ️ No se han guardado datos. Todos los dividendos de {ejercicio_fiscal} ya estaban registrados (Protección Antiduplicados).")
+
+                        except Exception as e:
+                            st.error(f"❌ Error al conectar o guardar en la base de datos: {e}")
 
         except Exception as e:
             st.error(f"❌ Error al procesar los archivos. Detalles: {e}")
+
+
+
+
+
 
 # ==========================================
 # 🚀 APLICACIÓN 6: CALCULADORA DE PLUSVALÍAS
