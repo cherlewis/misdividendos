@@ -350,7 +350,6 @@ if opcion == "📊 Dividendos a Excel":
 
 
 
-
 # ==========================================
 # 🚀 APLICACIÓN 2: COMPRAS Y VENTAS
 # ==========================================
@@ -501,10 +500,9 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                 st.markdown("---")
                 st.warning("🧩 **¡Hemos detectado compra de Derechos!**")
                 
-                # LA INSTRUCCIÓN CLAVE PARA EL USUARIO
                 st.info("💡 **PISTA:** Ve a los movimientos del broker y busca el concepto **SUSCRIPCIÓN - EMPRESA AÑO - 0,00€ - X Tit**. La **X** será el número de acciones que debes introducir a continuación.")
                 
-                st.write("Indica el **número final de acciones** que obtuviste gracias a cada compra de derechos. El sistema calculará el precio unitario automáticamente.")
+                st.write("Indica el **número final de acciones completas** que obtuviste gracias a cada compra de derechos. El sistema calculará el precio unitario automáticamente.")
                 
                 derechos_indices = df_mostrar[df_mostrar["Es_Derecho"]].index
                 
@@ -522,11 +520,12 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                         with col1:
                             st.info(f"**{empresa_nombre}** | El **{fecha_compra}** gastaste **{dinero_gastado}** comprando **{derechos_comprados}** derechos.")
                         with col2:
+                            # 🎯 CAMBIO AQUÍ: Ahora es un número entero limpio, sin decimales (step=1, min_value=1, value=1)
                             nuevos_titulos_dict[idx] = st.number_input(
                                 f"Acciones obtenidas", 
-                                min_value=1.0, 
-                                value=1.0, 
-                                step=1.0, 
+                                min_value=1, 
+                                value=1, 
+                                step=1, 
                                 key=f"acc_{idx}"
                             )
                     
@@ -538,7 +537,8 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                             
                             nuevo_precio = dinero_total / nuevas_acciones if nuevas_acciones > 0 else 0
                             
-                            st.session_state["ops_df"].at[idx, 'Títulos'] = f"{nuevas_acciones:.4f}".replace('.', ',')
+                            # 🎯 CAMBIO AQUÍ: Forzamos a que el título se guarde como String sin decimales
+                            st.session_state["ops_df"].at[idx, 'Títulos'] = str(nuevas_acciones)
                             st.session_state["ops_df"].at[idx, 'Precio'] = f"{nuevo_precio:.4f} EUR".replace('.', ',')
                             st.session_state["ops_df"].at[idx, 'Operación'] = "Compra (Suscripción Acciones)"
                             st.session_state["ops_df"].at[idx, 'Es_Derecho'] = False 
@@ -573,7 +573,6 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                 st.dataframe(df_export)
                 csv_op = df_export.to_csv(index=False, sep=";").encode('utf-8-sig')
                 st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv_op, file_name='operaciones_bolsa_enriquecido.csv', mime='text/csv')
-
 
 
 
