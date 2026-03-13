@@ -350,6 +350,7 @@ if opcion == "📊 Dividendos a Excel":
 
 
 
+
 # ==========================================
 # 🚀 APLICACIÓN 2: COMPRAS Y VENTAS
 # ==========================================
@@ -402,7 +403,6 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                             cambio_divisa = (match_fecha.group(7).strip() if match_fecha.group(7) else "1,000 EUR") if match_fecha else "Revisar"
 
                             # 🕵️‍♂️ IDENTIFICADOR DE DERECHOS
-                            # Si el nombre tiene ".D" (ej. VIS.D) o la palabra DERECHO
                             es_derecho = True if (".D " in empresa.upper() or ".D." in empresa.upper() or "DERECHO" in empresa.upper()) else False
 
                             datos_operaciones.append({
@@ -412,7 +412,7 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                                 "Impuestos": impuestos, "Comisión Cambio": comision_cambio, "Importe Total": importe_total,
                                 "Mercado": mercado, "Divisa / Cambio": cambio_divisa, "Archivo": archivo.name,
                                 "Es_Derecho": es_derecho,
-                                "Titulos_Originales_PDF": titulos # Guardamos el nº de derechos leídos
+                                "Titulos_Originales_PDF": titulos 
                             })
                 except Exception as e:
                     st.warning(f"⚠️ Error al procesar '{archivo.name}'. Se ha omitido.")
@@ -425,7 +425,7 @@ elif opcion == "🛒 Compras/Ventas a Excel":
             if datos_operaciones:
                 df_op = pd.DataFrame(datos_operaciones)
                 
-                # CRUCE BÁSICO CON BASE DE DATOS PARA SACAR SECTOR/PAÍS...
+                # CRUCE BÁSICO CON BASE DE DATOS
                 with st.spinner("🧠 Cruzando datos..."):
                     try:
                         from supabase import create_client, Client
@@ -485,7 +485,6 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                     except Exception as e:
                         st.error(f"⚠️ Error técnico real del cruce: {e}")
                 
-                # GUARDAMOS EN MEMORIA PARA QUE NO SE BORRE AL USAR LOS BOTONES
                 st.session_state["ops_df"] = df_op
                 st.session_state["ops_archivos"] = nombres_archivos
                 st.success(f"¡Se procesaron {len(df_op)} archivo(s) con éxito!")
@@ -496,15 +495,17 @@ elif opcion == "🛒 Compras/Ventas a Excel":
         if "ops_df" in st.session_state:
             df_mostrar = st.session_state["ops_df"].copy()
             
-            # Comprobamos si hay algún archivo de derechos
             hay_derechos = df_mostrar["Es_Derecho"].any()
 
             if hay_derechos:
                 st.markdown("---")
                 st.warning("🧩 **¡Hemos detectado compra de Derechos!**")
-                st.write("Indica a continuación el **número final de acciones** que obtuviste gracias a cada compra de derechos. El sistema calculará el precio unitario automáticamente.")
                 
-                # Filtramos las filas que son derechos
+                # LA INSTRUCCIÓN CLAVE PARA EL USUARIO
+                st.info("💡 **PISTA:** Ve a los movimientos del broker y busca el concepto **SUSCRIPCIÓN - EMPRESA AÑO - 0,00€ - X Tit**. La **X** será el número de acciones que debes introducir a continuación.")
+                
+                st.write("Indica el **número final de acciones** que obtuviste gracias a cada compra de derechos. El sistema calculará el precio unitario automáticamente.")
+                
                 derechos_indices = df_mostrar[df_mostrar["Es_Derecho"]].index
                 
                 with st.form("form_derechos"):
@@ -515,14 +516,12 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                         empresa_nombre = row["NombreING"]
                         derechos_comprados = row["Titulos_Originales_PDF"]
                         dinero_gastado = row["Importe Total"]
-                        fecha_compra = row["Fecha"] # 📅 ¡AQUÍ ESTÁ LA FECHA!
+                        fecha_compra = row["Fecha"] 
                         
                         col1, col2 = st.columns([2, 1])
                         with col1:
-                            # 🎯 Mensaje actualizado con la fecha de la operación
                             st.info(f"**{empresa_nombre}** | El **{fecha_compra}** gastaste **{dinero_gastado}** comprando **{derechos_comprados}** derechos.")
                         with col2:
-                            # Te pregunto directamente cuántas acciones son
                             nuevos_titulos_dict[idx] = st.number_input(
                                 f"Acciones obtenidas", 
                                 min_value=1.0, 
@@ -534,26 +533,22 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                     boton_aplicar = st.form_submit_button("✅ Aplicar conversiones a Acciones")
                     
                     if boton_aplicar:
-                        # Recorremos lo que has rellenado y actualizamos el DataFrame principal
                         for idx, nuevas_acciones in nuevos_titulos_dict.items():
                             dinero_total = euro_a_numero(str(df_mostrar.loc[idx, 'Importe Total']))
                             
-                            # Recalculamos el precio exacto por acción
                             nuevo_precio = dinero_total / nuevas_acciones if nuevas_acciones > 0 else 0
                             
-                            # Actualizamos los datos para el Excel
                             st.session_state["ops_df"].at[idx, 'Títulos'] = f"{nuevas_acciones:.4f}".replace('.', ',')
                             st.session_state["ops_df"].at[idx, 'Precio'] = f"{nuevo_precio:.4f} EUR".replace('.', ',')
                             st.session_state["ops_df"].at[idx, 'Operación'] = "Compra (Suscripción Acciones)"
-                            st.session_state["ops_df"].at[idx, 'Es_Derecho'] = False # Lo marcamos como resuelto
+                            st.session_state["ops_df"].at[idx, 'Es_Derecho'] = False 
                         
                         st.success("¡Conversiones aplicadas con éxito! Recalculando tabla...")
-                        st.rerun() # Refrescamos para que desaparezca el formulario y veamos la tabla final
+                        st.rerun() 
 
             # ---------------------------------------------------------------------
-            # 3. GENERACIÓN DE TOTALES Y EXCEL (Solo se muestra si no hay derechos pendientes de resolver)
+            # 3. GENERACIÓN DE TOTALES Y EXCEL
             # ---------------------------------------------------------------------
-            # Si todavía hay derechos en True, significa que no le has dado al botón verde de aplicar
             if not df_mostrar["Es_Derecho"].any():
                 columnas_finales = [
                     "Fecha", "Operación", "NombreING", "ISIN", "Pais", "Sector", "Subsector", 
@@ -578,7 +573,6 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                 st.dataframe(df_export)
                 csv_op = df_export.to_csv(index=False, sep=";").encode('utf-8-sig')
                 st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv_op, file_name='operaciones_bolsa_enriquecido.csv', mime='text/csv')
-
 
 
 
