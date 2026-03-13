@@ -558,8 +558,10 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                         st.success("¡Conversiones aplicadas con éxito! Recalculando tabla...")
                         st.rerun() 
 
+
+            
             # ---------------------------------------------------------------------
-            # 3. GENERACIÓN DE TOTALES Y EXCEL
+            # 3. GENERACIÓN DE TOTALES, EXCEL Y SUBIDA A SUPABASE
             # ---------------------------------------------------------------------
             if not df_mostrar["Es_Derecho"].any():
                 columnas_finales = [
@@ -570,9 +572,11 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                 ]
                 df_export = df_mostrar[columnas_finales].copy()
                 
+                # Ordenamos cronológicamente
                 df_export['Fecha_Temporal'] = pd.to_datetime(df_export['Fecha'], format='%d/%m/%Y', errors='coerce')
                 df_export = df_export.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
                 
+                # Fila de totales visual (solo para el Excel y la pantalla, NO para la BBDD)
                 fila_totales = {col: "" for col in df_export.columns}
                 fila_totales["Fecha"] = "TOTALES"
                 cols_a_sumar_op = ["Importe Op.", "Comisión ING", "Gastos Bolsa", "Impuestos", "Comisión Cambio", "Importe Total"]
@@ -580,11 +584,103 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                     suma = df_export[col].apply(lambda x: euro_a_numero(str(x)) if pd.notnull(x) and x != "" else 0).sum()
                     fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
                 
-                df_export = pd.concat([df_export, pd.DataFrame([fila_totales])], ignore_index=True)
+                df_export_visual = pd.concat([df_export, pd.DataFrame([fila_totales])], ignore_index=True)
                 
-                st.dataframe(df_export)
-                csv_op = df_export.to_csv(index=False, sep=";").encode('utf-8-sig')
-                st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv_op, file_name='operaciones_bolsa_enriquecido.csv', mime='text/csv')
+                st.dataframe(df_export_visual)
+                
+                st.markdown("---")
+                
+                # ---------------------------------------------------------------------
+                # 🎛️ BOTONES DE ACCIÓN (EXCEL Y SUPABASE)
+                # ---------------------------------------------------------------------
+                col_excel, col_db = st.columns(2)
+                
+                with col_excel:
+                    csv_op = df_export_visual.to_csv(index=False, sep=";").encode('utf-8-sig')
+                    st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv_op, file_name='operaciones_bolsa_enriquecido.csv', mime='text/csv', use_container_width=True)
+
+                with col_db:
+                    if st.button("☁️ Guardar en MovimientosCompraVenta (DB)", type="primary", use_container_width=True):
+                        with st.spinner("Comprobando duplicados y guardando en Supabase..."):
+                            try:
+                                from supabase import create_client, Client
+                                url = st.secrets["SUPABASE_URL"]
+                                key = st.secrets["SUPABASE_KEY"]
+                                supabase = create_client(url, key)
+
+                                # 1. Traer datos existentes para evitar duplicados
+                                # Solo necesitamos campos clave para construir la "Firma Única"
+                                res_db = supabase.table("MovimientosCompraVenta").select("FechaEjecucion, ISIN, TipoOperacion, ImporteTotal").execute()
+                                
+                                db_existentes = set()
+                                if res_db.data:
+                                    for row_db in res_db.data:
+                                        # Firma: YYYY-MM-DD_ISIN_OPERACION_IMPORTE
+                                        imp_db = round(float(row_db.get("ImporteTotal", 0)), 2)
+                                        firma = f"{row_db.get('FechaEjecucion')}_{row_db.get('ISIN')}_{row_db.get('TipoOperacion')}_{imp_db}"
+                                        db_existentes.add(firma)
+
+                                # 2. Preparar los registros nuevos
+                                registros_a_subir = []
+                                
+                                # Usamos df_export (que NO tiene la fila de TOTALES)
+                                for idx, row in df_export.iterrows():
+                                    if row["Fecha"] == "TOTALES": continue
+                                    
+                                    # Convertir fecha de DD/MM/YYYY a YYYY-MM-DD (Formato SQL)
+                                    try:
+                                        fecha_sql = datetime.strptime(row["Fecha"], "%d/%m/%Y").strftime("%Y-%m-%d")
+                                    except:
+                                        fecha_sql = None
+                                        
+                                    isin = str(row["ISIN"]).strip()
+                                    tipo_op = str(row["Operación"]).strip()
+                                    imp_total = round(euro_a_numero(str(row["Importe Total"])), 2)
+
+                                    # Creamos la firma del registro actual
+                                    firma_actual = f"{fecha_sql}_{isin}_{tipo_op}_{imp_total}"
+
+                                    # Si la firma no está en la base de datos, es nuevo
+                                    if firma_actual not in db_existentes and fecha_sql:
+                                        # Cálculos numéricos y mapeo al Esquema
+                                        titulos = euro_a_numero(str(row["Títulos"]))
+                                        precio = euro_a_numero(str(row["Precio"]))
+                                        imp_op = euro_a_numero(str(row["Importe Op."]))
+                                        comision_ing = euro_a_numero(str(row["Comisión ING"]))
+                                        gastos_bolsa = euro_a_numero(str(row["Gastos Bolsa"]))
+                                        impuestos = euro_a_numero(str(row["Impuestos"]))
+                                        com_cambio = euro_a_numero(str(row["Comisión Cambio"]))
+                                        
+                                        # Agrupamos Gastos + Impuestos tal y como pide tu base de datos
+                                        gastos_totales = gastos_bolsa + impuestos
+                                        
+                                        # Calculamos el sumatorio de todas las comisiones
+                                        total_comision = comision_ing + gastos_totales + com_cambio
+
+                                        registros_a_subir.append({
+                                            "ISIN": isin,
+                                            "Titulos": titulos,
+                                            "TipoOperacion": tipo_op,
+                                            "Precio": precio,
+                                            "ImporteOperacion": imp_op,
+                                            "Comision": comision_ing,
+                                            "Gastos": gastos_totales,
+                                            "TotalComision": total_comision,
+                                            "ImporteTotal": imp_total,
+                                            "FechaEjecucion": fecha_sql,
+                                            "ComisionCambioDivisa": com_cambio
+                                        })
+
+                                # 3. Inserción masiva
+                                if registros_a_subir:
+                                    supabase.table("MovimientosCompraVenta").insert(registros_a_subir).execute()
+                                    st.success(f"✅ ¡Se han guardado {len(registros_a_subir)} movimientos NUEVOS en la base de datos!")
+                                    st.balloons() # ¡Para celebrar que todo cuadra!
+                                else:
+                                    st.info("ℹ️ No se han guardado datos. Todos los PDFs procesados ya estaban registrados en Supabase (Duplicados detectados y omitidos).")
+
+                            except Exception as e:
+                                st.error(f"❌ Error al conectar o guardar en la base de datos: {e}")
 
 
 
