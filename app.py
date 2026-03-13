@@ -1125,12 +1125,65 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
         else:
             st.info("No hay empresas en la base de datos todavía.")
 
-    # --- PESTAÑA 3: VER TABLA ---
+    # --- PESTAÑA 3: VER TABLA (AHORA CON PRECIOS EN VIVO) ---
     with tab3:
         st.subheader("Base de Datos Actual")
         if not df_empresas.empty:
-            columnas_mostrar = ["ISIN", "NombreING", "Pais", "Sector", "Subsector", "NombreHacienda", "Capitalizacion", "Ticker", "MonedaCotizacion"]
-            st.dataframe(df_empresas[columnas_mostrar], use_container_width=True)
+            # Mostramos las columnas que tienes en tu nuevo esquema
+            columnas_mostrar = ["ISIN", "NombreING", "Ticker", "Pais", "Sector", "Capitalizacion"]
+            
+            # Filtramos para mostrar solo las columnas que realmente existen en el DataFrame
+            cols_existentes = [col for col in columnas_mostrar if col in df_empresas.columns]
+            st.dataframe(df_empresas[cols_existentes], use_container_width=True)
+            
+            st.markdown("---")
+            st.write("📈 **Añadir datos del mercado en tiempo real**")
+            if st.button("🔄 Cargar Cotizaciones en Vivo"):
+                if "Ticker" not in df_empresas.columns:
+                    st.error("Necesitas asegurar que la columna 'Ticker' esté cargada desde Supabase.")
+                else:
+                    import yfinance as yf
+                    with st.spinner("Conectando con Wall Street para descargar precios..."):
+                        precios_actuales = []
+                        variaciones = []
+                        
+                        # Recorremos cada empresa para buscar su precio
+                        for idx, row in df_empresas.iterrows():
+                            ticker = row.get("Ticker", "")
+                            if pd.notna(ticker) and str(ticker).strip() != "":
+                                try:
+                                    # Descargamos la info del ticker
+                                    info = yf.Ticker(str(ticker).strip()).info
+                                    precio = info.get('currentPrice', info.get('regularMarketPrice', 0))
+                                    moneda = info.get('currency', 'EUR')
+                                    cierre_ant = info.get('previousClose', 0)
+                                    
+                                    if precio > 0:
+                                        precios_actuales.append(f"{precio:.2f} {moneda}")
+                                        var_pct = ((precio - cierre_ant) / cierre_ant) * 100 if cierre_ant > 0 else 0
+                                        variaciones.append(f"{var_pct:+.2f}%")
+                                    else:
+                                        precios_actuales.append("No disp.")
+                                        variaciones.append("-")
+                                except:
+                                    precios_actuales.append("Error Ticker")
+                                    variaciones.append("-")
+                            else:
+                                precios_actuales.append("Sin Ticker")
+                                variaciones.append("-")
+                        
+                        # Añadimos las COLUMNAS VIRTUALES al DataFrame solo para mostrarlas
+                        df_empresas_vivo = df_empresas.copy()
+                        df_empresas_vivo["Precio Actual"] = precios_actuales
+                        df_empresas_vivo["Variación Hoy"] = variaciones
+                        
+                        st.success("¡Cotizaciones actualizadas al segundo!")
+                        
+                        # Mostramos la tabla enriquecida
+                        cols_finales = ["NombreING", "Ticker", "Precio Actual", "Variación Hoy", "Sector"]
+                        cols_finales_existentes = [c for c in cols_finales if c in df_empresas_vivo.columns]
+                        st.dataframe(df_empresas_vivo[cols_finales_existentes], use_container_width=True)
+
             st.metric("Total de Empresas", len(df_empresas))
         else:
             st.write("La base de datos está vacía.")
