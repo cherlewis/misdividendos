@@ -349,6 +349,7 @@ if opcion == "📊 Dividendos a Excel":
 
 
 
+
 # ==========================================
 # 🚀 APLICACIÓN 2: COMPRAS Y VENTAS
 # ==========================================
@@ -514,10 +515,12 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                         empresa_nombre = row["NombreING"]
                         derechos_comprados = row["Titulos_Originales_PDF"]
                         dinero_gastado = row["Importe Total"]
+                        fecha_compra = row["Fecha"] # 📅 ¡AQUÍ ESTÁ LA FECHA!
                         
                         col1, col2 = st.columns([2, 1])
                         with col1:
-                            st.info(f"**{empresa_nombre}** | Gastaste **{dinero_gastado}** comprando **{derechos_comprados}** derechos.")
+                            # 🎯 Mensaje actualizado con la fecha de la operación
+                            st.info(f"**{empresa_nombre}** | El **{fecha_compra}** gastaste **{dinero_gastado}** comprando **{derechos_comprados}** derechos.")
                         with col2:
                             # Te pregunto directamente cuántas acciones son
                             nuevos_titulos_dict[idx] = st.number_input(
@@ -575,6 +578,9 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                 st.dataframe(df_export)
                 csv_op = df_export.to_csv(index=False, sep=";").encode('utf-8-sig')
                 st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv_op, file_name='operaciones_bolsa_enriquecido.csv', mime='text/csv')
+
+
+
 
 
 
