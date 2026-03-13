@@ -349,175 +349,239 @@ if opcion == "📊 Dividendos a Excel":
 
 
 
-
-
-
-
-
 # ==========================================
 # 🚀 APLICACIÓN 2: COMPRAS Y VENTAS
 # ==========================================
 elif opcion == "🛒 Compras/Ventas a Excel":
     st.title("🛒 Extractor de Compras y Ventas")
     st.write("Sube tus justificantes de operaciones de bolsa (ING) para obtener el desglose de comisiones.")
+    
+    # Usamos una clave de reseteo para la caché si se cambian los archivos
     archivos_pdf_op = st.file_uploader("Sube tus PDFs de Operaciones aquí", type=["pdf"], accept_multiple_files=True, key="ops")
 
     if archivos_pdf_op:
-        datos_operaciones = []
-        total_archivos = len(archivos_pdf_op)
-        barra_progreso = st.progress(0)
-        texto_estado = st.empty()
+        nombres_archivos = "".join([a.name for a in archivos_pdf_op])
+        
+        # 1. LECTURA Y PROCESAMIENTO (Solo se hace una vez)
+        if "ops_df" not in st.session_state or st.session_state.get("ops_archivos") != nombres_archivos:
+            datos_operaciones = []
+            total_archivos = len(archivos_pdf_op)
+            barra_progreso = st.progress(0)
+            texto_estado = st.empty()
 
-        for i, archivo in enumerate(archivos_pdf_op):
-            texto_estado.text(f"⏳ Procesando ({i+1}/{total_archivos}): {archivo.name}...")
-            try:
-                with pdfplumber.open(archivo) as pdf:
-                    texto = pdf.pages[0].extract_text(layout=True)
-                    if not texto: texto = pdf.pages[0].extract_text()
-                    
-                    if texto:
-                        # 🔒 CANDADO HORIZONTAL: Usamos [ \t] en lugar de \s para que NO salte de línea y lea tu nombre
-                        patron_int = r"(\d[\d\.]*)[ \t]+([A-Za-z0-9\.\-\&\' ]+?)[ \t]+([A-Z]{2}[A-Z0-9]{10})[ \t]+([A-Za-z0-9\.\-\(\) ]+?)[ \t]+(Compra|Venta)[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})"
-                        patron_nac = r"(\d[\d\.]*)[ \t]+([A-Za-z0-9\.\-\&\' ]+?)[ \t]+([A-Z]{2}[A-Z0-9]{10})[ \t]+([A-Za-z0-9\.\-\(\) ]+?)[ \t]+(Compra|Venta)[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})"
-                        
-                        match_int = re.search(patron_int, texto)
-                        match_nac = re.search(patron_nac, texto) if not match_int else None
-                        
-                        patron_fecha = r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})\s+(\d+)\s+([A-Za-z áéíóúÁÉÍÓÚ]+?)\s+([\d,]+\s+[A-Z]{3})(?:\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}))?(?:\s+([\d,]+\s+[A-Z]{3}))?\s+([\d,]+\s+[A-Z]{3})"
-                        match_fecha = re.search(patron_fecha, texto)
-
-                        if match_int:
-                            datos = [g.strip() for g in match_int.groups()]
-                            titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, comision_cambio, importe_total = datos
-                        elif match_nac:
-                            datos = [g.strip() for g in match_nac.groups()]
-                            titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, importe_total = datos
-                            comision_cambio = "0,00 EUR"
-                        else:
-                            continue
-                            
-                        fecha_ejecucion = match_fecha.group(2).strip()[:10] if match_fecha else "No encontrada"
-                        tipo_orden = match_fecha.group(4).strip() if match_fecha else "Desconocido"
-                        cambio_divisa = (match_fecha.group(7).strip() if match_fecha.group(7) else "1,000 EUR") if match_fecha else "Revisar"
-
-                        datos_operaciones.append({
-                            "Fecha": fecha_ejecucion, "Operación": tipo_op, "Tipo Orden": tipo_orden, 
-                            "Empresa_PDF": empresa, "ISIN": isin, "Títulos": titulos, "Precio": precio,
-                            "Importe Op.": importe_op, "Comisión ING": comision_ing, "Gastos Bolsa": gastos_bolsa,
-                            "Impuestos": impuestos, "Comisión Cambio": comision_cambio, "Importe Total": importe_total,
-                            "Mercado": mercado, "Divisa / Cambio": cambio_divisa, "Archivo": archivo.name
-                        })
-            except Exception as e:
-                st.warning(f"⚠️ Error al procesar '{archivo.name}'. Se ha omitido.")
-            
-            gc.collect()
-            barra_progreso.progress((i + 1) / total_archivos)
-
-        texto_estado.empty()
-
-        if datos_operaciones:
-            df_op = pd.DataFrame(datos_operaciones)
-            
-            # ==========================================
-            # 🧠 LA MAGIA: CRUCE CON BASE DE DATOS
-            # ==========================================
-            with st.spinner("🧠 Cruzando datos y traduciendo derechos..."):
+            for i, archivo in enumerate(archivos_pdf_op):
+                texto_estado.text(f"⏳ Procesando ({i+1}/{total_archivos}): {archivo.name}...")
                 try:
-                    from supabase import create_client, Client
-                    url: str = st.secrets["SUPABASE_URL"]
-                    key: str = st.secrets["SUPABASE_KEY"]
-                    supabase: Client = create_client(url, key)
-                    
-                    respuesta = supabase.table("Empresas").select("ISIN, NombreING, Pais, Sector, Subsector, NombreHacienda").execute()
-                    df_db = pd.DataFrame(respuesta.data)
-                    
-                    if not df_db.empty:
-                        df_db_limpio = df_db.dropna(subset=['ISIN']).drop_duplicates(subset=['ISIN'])
-                        db_isin = df_db_limpio.set_index("ISIN").to_dict("index")
+                    with pdfplumber.open(archivo) as pdf:
+                        texto = pdf.pages[0].extract_text(layout=True)
+                        if not texto: texto = pdf.pages[0].extract_text()
                         
-                        # 🔧 LA SOLUCIÓN: Añadimos .to_dict() para que Pandas no se vuelva loco al comprobar si existe
-                        db_nombre = {str(row["NombreING"]).upper(): row.to_dict() for _, row in df_db.iterrows()}
-                    else:
-                        db_isin = {}
-                        db_nombre = {}
-
-                    # 🕵️‍♂️ TRADUCTOR DE DERECHOS ESPAÑOLES
-                    def normalizar_derechos(nombre_pdf):
-                        n = str(nombre_pdf).upper()
-                        if n.startswith("IBE.D"): return "IBERDROLA"
-                        if n.startswith("VIS.D"): return "VISCOFAN"
-                        if n.startswith("VID.D"): return "VIDRALA"
-                        if n.startswith("REP.D"): return "REPSOL"
-                        if n.startswith("TEF.D"): return "TELEFONICA"
-                        if n.startswith("ACS.D"): return "ACS"
-                        if n.startswith("FER.D"): return "FERROVIAL"
-                        if n.startswith("SAB.D"): return "BANCO SABADELL"
-                        if n.startswith("ELE.D"): return "ENDESA"
-                        return n
-
-                    sectores, subsectores, paises, nombres_ing, nombres_hac = [], [], [], [], []
-
-                    for _, row in df_op.iterrows():
-                        isin_op = str(row["ISIN"])
-                        empresa_pdf = str(row["Empresa_PDF"])
-                        nombre_norm = normalizar_derechos(empresa_pdf)
-                        
-                        match = None
-                        if isin_op in db_isin:
-                            match = db_isin[isin_op]
-                        elif nombre_norm in db_nombre:
-                            match = db_nombre[nombre_norm]
+                        if texto:
+                            patron_int = r"(\d[\d\.]*)[ \t]+([A-Za-z0-9\.\-\&\' ]+?)[ \t]+([A-Z]{2}[A-Z0-9]{10})[ \t]+([A-Za-z0-9\.\-\(\) ]+?)[ \t]+(Compra|Venta)[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})"
+                            patron_nac = r"(\d[\d\.]*)[ \t]+([A-Za-z0-9\.\-\&\' ]+?)[ \t]+([A-Z]{2}[A-Z0-9]{10})[ \t]+([A-Za-z0-9\.\-\(\) ]+?)[ \t]+(Compra|Venta)[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})[ \t]+([\d,]+[ \t]*[A-Z]{3})"
                             
-                        # Ahora 'match' siempre será un diccionario limpio, y el 'if' funcionará perfectamente
-                        if match:
-                            sectores.append(match.get("Sector", "Pendiente de Clasificar"))
-                            subsectores.append(match.get("Subsector", "Pendiente de Clasificar"))
-                            paises.append(match.get("Pais", "Desconocido"))
-                            nombres_ing.append(match.get("NombreING", empresa_pdf))
-                            nombres_hac.append(match.get("NombreHacienda", ""))
-                        else:
-                            sectores.append("Pendiente de Clasificar")
-                            subsectores.append("Pendiente de Clasificar")
-                            paises.append("Desconocido")
-                            nombres_ing.append(empresa_pdf)
-                            nombres_hac.append(f"CODIGO: {isin_op}")
+                            match_int = re.search(patron_int, texto)
+                            match_nac = re.search(patron_nac, texto) if not match_int else None
+                            
+                            patron_fecha = r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})\s+(\d+)\s+([A-Za-z áéíóúÁÉÍÓÚ]+?)\s+([\d,]+\s+[A-Z]{3})(?:\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}))?(?:\s+([\d,]+\s+[A-Z]{3}))?\s+([\d,]+\s+[A-Z]{3})"
+                            match_fecha = re.search(patron_fecha, texto)
 
-                    df_op["Sector"] = sectores
-                    df_op["Subsector"] = subsectores
-                    df_op["Pais"] = paises
-                    df_op["NombreING"] = nombres_ing
-                    df_op["NombreHacienda"] = nombres_hac
+                            if match_int:
+                                datos = [g.strip() for g in match_int.groups()]
+                                titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, comision_cambio, importe_total = datos
+                            elif match_nac:
+                                datos = [g.strip() for g in match_nac.groups()]
+                                titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, importe_total = datos
+                                comision_cambio = "0,00 EUR"
+                            else:
+                                continue
+                                
+                            fecha_ejecucion = match_fecha.group(2).strip()[:10] if match_fecha else "No encontrada"
+                            tipo_orden = match_fecha.group(4).strip() if match_fecha else "Desconocido"
+                            cambio_divisa = (match_fecha.group(7).strip() if match_fecha.group(7) else "1,000 EUR") if match_fecha else "Revisar"
 
-                    columnas_finales = [
-                        "Fecha", "Operación", "NombreING", "ISIN", "Pais", "Sector", "Subsector", 
-                        "Títulos", "Precio", "Importe Op.", "Comisión ING", "Gastos Bolsa", 
-                        "Impuestos", "Comisión Cambio", "Importe Total", "Mercado", "Divisa / Cambio", 
-                        "NombreHacienda", "Archivo"
-                    ]
-                    df_op = df_op[columnas_finales]
+                            # 🕵️‍♂️ IDENTIFICADOR DE DERECHOS
+                            # Si el nombre tiene ".D" (ej. VIS.D) o la palabra DERECHO
+                            es_derecho = True if (".D " in empresa.upper() or ".D." in empresa.upper() or "DERECHO" in empresa.upper()) else False
+
+                            datos_operaciones.append({
+                                "Fecha": fecha_ejecucion, "Operación": tipo_op, "Tipo Orden": tipo_orden, 
+                                "Empresa_PDF": empresa, "ISIN": isin, "Títulos": titulos, "Precio": precio,
+                                "Importe Op.": importe_op, "Comisión ING": comision_ing, "Gastos Bolsa": gastos_bolsa,
+                                "Impuestos": impuestos, "Comisión Cambio": comision_cambio, "Importe Total": importe_total,
+                                "Mercado": mercado, "Divisa / Cambio": cambio_divisa, "Archivo": archivo.name,
+                                "Es_Derecho": es_derecho,
+                                "Titulos_Originales_PDF": titulos # Guardamos el nº de derechos leídos
+                            })
                 except Exception as e:
-                    st.error(f"⚠️ Error técnico real del cruce: {e}")
-                    st.warning("Generando Excel básico...")
-            # ==========================================
-            # ==========================================
-            # ==========================================
+                    st.warning(f"⚠️ Error al procesar '{archivo.name}'. Se ha omitido.")
+                
+                gc.collect()
+                barra_progreso.progress((i + 1) / total_archivos)
 
-            st.success(f"¡Se procesaron y cruzaron {len(df_op)} archivo(s) con éxito!")
-            df_op['Fecha_Temporal'] = pd.to_datetime(df_op['Fecha'], format='%d/%m/%Y', errors='coerce')
-            df_op = df_op.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
+            texto_estado.empty()
+
+            if datos_operaciones:
+                df_op = pd.DataFrame(datos_operaciones)
+                
+                # CRUCE BÁSICO CON BASE DE DATOS PARA SACAR SECTOR/PAÍS...
+                with st.spinner("🧠 Cruzando datos..."):
+                    try:
+                        from supabase import create_client, Client
+                        url = st.secrets["SUPABASE_URL"]
+                        key = st.secrets["SUPABASE_KEY"]
+                        supabase = create_client(url, key)
+                        respuesta = supabase.table("Empresas").select("ISIN, NombreING, Pais, Sector, Subsector, NombreHacienda").execute()
+                        df_db = pd.DataFrame(respuesta.data)
+                        
+                        if not df_db.empty:
+                            df_db_limpio = df_db.dropna(subset=['ISIN']).drop_duplicates(subset=['ISIN'])
+                            db_isin = df_db_limpio.set_index("ISIN").to_dict("index")
+                            db_nombre = {str(row["NombreING"]).upper(): row.to_dict() for _, row in df_db.iterrows()}
+                        else:
+                            db_isin, db_nombre = {}, {}
+
+                        def normalizar_derechos(nombre_pdf):
+                            n = str(nombre_pdf).upper()
+                            if n.startswith("IBE.D"): return "IBERDROLA"
+                            if n.startswith("VIS.D"): return "VISCOFAN"
+                            if n.startswith("VID.D"): return "VIDRALA"
+                            if n.startswith("REP.D"): return "REPSOL"
+                            if n.startswith("TEF.D"): return "TELEFONICA"
+                            if n.startswith("ACS.D"): return "ACS"
+                            if n.startswith("FER.D"): return "FERROVIAL"
+                            if n.startswith("SAB.D"): return "BANCO SABADELL"
+                            if n.startswith("ELE.D"): return "ENDESA"
+                            return n
+
+                        sectores, subsectores, paises, nombres_ing, nombres_hac = [], [], [], [], []
+
+                        for _, row in df_op.iterrows():
+                            isin_op = str(row["ISIN"])
+                            empresa_pdf = str(row["Empresa_PDF"])
+                            nombre_norm = normalizar_derechos(empresa_pdf)
+                            
+                            match = db_isin.get(isin_op) or db_nombre.get(nombre_norm)
+                            if match:
+                                sectores.append(match.get("Sector", "Pendiente de Clasificar"))
+                                subsectores.append(match.get("Subsector", "Pendiente de Clasificar"))
+                                paises.append(match.get("Pais", "Desconocido"))
+                                nombres_ing.append(match.get("NombreING", empresa_pdf))
+                                nombres_hac.append(match.get("NombreHacienda", ""))
+                            else:
+                                sectores.append("Pendiente de Clasificar")
+                                subsectores.append("Pendiente de Clasificar")
+                                paises.append("Desconocido")
+                                nombres_ing.append(empresa_pdf)
+                                nombres_hac.append(f"CODIGO: {isin_op}")
+
+                        df_op["Sector"] = sectores
+                        df_op["Subsector"] = subsectores
+                        df_op["Pais"] = paises
+                        df_op["NombreING"] = nombres_ing
+                        df_op["NombreHacienda"] = nombres_hac
+
+                    except Exception as e:
+                        st.error(f"⚠️ Error técnico real del cruce: {e}")
+                
+                # GUARDAMOS EN MEMORIA PARA QUE NO SE BORRE AL USAR LOS BOTONES
+                st.session_state["ops_df"] = df_op
+                st.session_state["ops_archivos"] = nombres_archivos
+                st.success(f"¡Se procesaron {len(df_op)} archivo(s) con éxito!")
+
+        # ---------------------------------------------------------------------
+        # 2. INTERFAZ PARA INTRODUCIR ACCIONES EQUIVALENTES
+        # ---------------------------------------------------------------------
+        if "ops_df" in st.session_state:
+            df_mostrar = st.session_state["ops_df"].copy()
             
-            fila_totales = {col: "" for col in df_op.columns}
-            fila_totales["Fecha"] = "TOTALES"
-            cols_a_sumar_op = ["Importe Op.", "Comisión ING", "Gastos Bolsa", "Impuestos", "Comisión Cambio", "Importe Total"]
-            for col in cols_a_sumar_op:
-                suma = df_op[col].apply(lambda x: euro_a_numero(str(x)) if pd.notnull(x) and x != "" else 0).sum()
-                fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
-            
-            df_op = pd.concat([df_op, pd.DataFrame([fila_totales])], ignore_index=True)
-            
-            st.dataframe(df_op)
-            csv_op = df_op.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv_op, file_name='operaciones_bolsa_enriquecido.csv', mime='text/csv')
+            # Comprobamos si hay algún archivo de derechos
+            hay_derechos = df_mostrar["Es_Derecho"].any()
+
+            if hay_derechos:
+                st.markdown("---")
+                st.warning("🧩 **¡Hemos detectado compra de Derechos!**")
+                st.write("Indica a continuación el **número final de acciones** que obtuviste gracias a cada compra de derechos. El sistema calculará el precio unitario automáticamente.")
+                
+                # Filtramos las filas que son derechos
+                derechos_indices = df_mostrar[df_mostrar["Es_Derecho"]].index
+                
+                with st.form("form_derechos"):
+                    nuevos_titulos_dict = {}
+                    
+                    for idx in derechos_indices:
+                        row = df_mostrar.loc[idx]
+                        empresa_nombre = row["NombreING"]
+                        derechos_comprados = row["Titulos_Originales_PDF"]
+                        dinero_gastado = row["Importe Total"]
+                        
+                        col1, col2 = st.columns([2, 1])
+                        with col1:
+                            st.info(f"**{empresa_nombre}** | Gastaste **{dinero_gastado}** comprando **{derechos_comprados}** derechos.")
+                        with col2:
+                            # Te pregunto directamente cuántas acciones son
+                            nuevos_titulos_dict[idx] = st.number_input(
+                                f"Acciones obtenidas", 
+                                min_value=1.0, 
+                                value=1.0, 
+                                step=1.0, 
+                                key=f"acc_{idx}"
+                            )
+                    
+                    boton_aplicar = st.form_submit_button("✅ Aplicar conversiones a Acciones")
+                    
+                    if boton_aplicar:
+                        # Recorremos lo que has rellenado y actualizamos el DataFrame principal
+                        for idx, nuevas_acciones in nuevos_titulos_dict.items():
+                            dinero_total = euro_a_numero(str(df_mostrar.loc[idx, 'Importe Total']))
+                            
+                            # Recalculamos el precio exacto por acción
+                            nuevo_precio = dinero_total / nuevas_acciones if nuevas_acciones > 0 else 0
+                            
+                            # Actualizamos los datos para el Excel
+                            st.session_state["ops_df"].at[idx, 'Títulos'] = f"{nuevas_acciones:.4f}".replace('.', ',')
+                            st.session_state["ops_df"].at[idx, 'Precio'] = f"{nuevo_precio:.4f} EUR".replace('.', ',')
+                            st.session_state["ops_df"].at[idx, 'Operación'] = "Compra (Suscripción Acciones)"
+                            st.session_state["ops_df"].at[idx, 'Es_Derecho'] = False # Lo marcamos como resuelto
+                        
+                        st.success("¡Conversiones aplicadas con éxito! Recalculando tabla...")
+                        st.rerun() # Refrescamos para que desaparezca el formulario y veamos la tabla final
+
+            # ---------------------------------------------------------------------
+            # 3. GENERACIÓN DE TOTALES Y EXCEL (Solo se muestra si no hay derechos pendientes de resolver)
+            # ---------------------------------------------------------------------
+            # Si todavía hay derechos en True, significa que no le has dado al botón verde de aplicar
+            if not df_mostrar["Es_Derecho"].any():
+                columnas_finales = [
+                    "Fecha", "Operación", "NombreING", "ISIN", "Pais", "Sector", "Subsector", 
+                    "Títulos", "Precio", "Importe Op.", "Comisión ING", "Gastos Bolsa", 
+                    "Impuestos", "Comisión Cambio", "Importe Total", "Mercado", "Divisa / Cambio", 
+                    "NombreHacienda", "Archivo"
+                ]
+                df_export = df_mostrar[columnas_finales].copy()
+                
+                df_export['Fecha_Temporal'] = pd.to_datetime(df_export['Fecha'], format='%d/%m/%Y', errors='coerce')
+                df_export = df_export.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
+                
+                fila_totales = {col: "" for col in df_export.columns}
+                fila_totales["Fecha"] = "TOTALES"
+                cols_a_sumar_op = ["Importe Op.", "Comisión ING", "Gastos Bolsa", "Impuestos", "Comisión Cambio", "Importe Total"]
+                for col in cols_a_sumar_op:
+                    suma = df_export[col].apply(lambda x: euro_a_numero(str(x)) if pd.notnull(x) and x != "" else 0).sum()
+                    fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
+                
+                df_export = pd.concat([df_export, pd.DataFrame([fila_totales])], ignore_index=True)
+                
+                st.dataframe(df_export)
+                csv_op = df_export.to_csv(index=False, sep=";").encode('utf-8-sig')
+                st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv_op, file_name='operaciones_bolsa_enriquecido.csv', mime='text/csv')
+
+
+
+
+
+
+
 
 # ==========================================
 # 🚀 APLICACIÓN 3: RENOMBRADOR INTELIGENTE
