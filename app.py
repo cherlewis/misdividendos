@@ -599,6 +599,7 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                     csv_op = df_export_visual.to_csv(index=False, sep=";").encode('utf-8-sig')
                     st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv_op, file_name='operaciones_bolsa_enriquecido.csv', mime='text/csv', use_container_width=True)
 
+
                 with col_db:
                     if st.button("☁️ Guardar en MovimientosCompraVenta (DB)", type="primary", use_container_width=True):
                         with st.spinner("Comprobando duplicados y guardando en Supabase..."):
@@ -609,7 +610,6 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                                 supabase = create_client(url, key)
 
                                 # 1. Traer datos existentes para evitar duplicados
-                                # Solo necesitamos campos clave para construir la "Firma Única"
                                 res_db = supabase.table("MovimientosCompraVenta").select("FechaEjecucion, ISIN, TipoOperacion, ImporteTotal").execute()
                                 
                                 db_existentes = set()
@@ -623,11 +623,9 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                                 # 2. Preparar los registros nuevos
                                 registros_a_subir = []
                                 
-                                # Usamos df_export (que NO tiene la fila de TOTALES)
                                 for idx, row in df_export.iterrows():
                                     if row["Fecha"] == "TOTALES": continue
                                     
-                                    # Convertir fecha de DD/MM/YYYY a YYYY-MM-DD (Formato SQL)
                                     try:
                                         fecha_sql = datetime.strptime(row["Fecha"], "%d/%m/%Y").strftime("%Y-%m-%d")
                                     except:
@@ -637,25 +635,22 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                                     tipo_op = str(row["Operación"]).strip()
                                     imp_total = round(euro_a_numero(str(row["Importe Total"])), 2)
 
-                                    # Creamos la firma del registro actual
                                     firma_actual = f"{fecha_sql}_{isin}_{tipo_op}_{imp_total}"
 
-                                    # Si la firma no está en la base de datos, es nuevo
                                     if firma_actual not in db_existentes and fecha_sql:
-                                        # Cálculos numéricos y mapeo al Esquema
-                                        titulos = euro_a_numero(str(row["Títulos"]))
-                                        precio = euro_a_numero(str(row["Precio"]))
-                                        imp_op = euro_a_numero(str(row["Importe Op."]))
-                                        comision_ing = euro_a_numero(str(row["Comisión ING"]))
-                                        gastos_bolsa = euro_a_numero(str(row["Gastos Bolsa"]))
-                                        impuestos = euro_a_numero(str(row["Impuestos"]))
-                                        com_cambio = euro_a_numero(str(row["Comisión Cambio"]))
+                                        # 🔒 CORTAFUEGOS DE DECIMALES (Obligamos a redondear a 2 y 4)
+                                        titulos = round(euro_a_numero(str(row["Títulos"])), 4)
+                                        precio = round(euro_a_numero(str(row["Precio"])), 4)
+                                        imp_op = round(euro_a_numero(str(row["Importe Op."])), 2)
                                         
-                                        # Agrupamos Gastos + Impuestos tal y como pide tu base de datos
-                                        gastos_totales = gastos_bolsa + impuestos
+                                        comision_ing = round(euro_a_numero(str(row["Comisión ING"])), 2)
+                                        gastos_bolsa = round(euro_a_numero(str(row["Gastos Bolsa"])), 2)
+                                        impuestos = round(euro_a_numero(str(row["Impuestos"])), 2)
+                                        com_cambio = round(euro_a_numero(str(row["Comisión Cambio"])), 2)
                                         
-                                        # Calculamos el sumatorio de todas las comisiones
-                                        total_comision = comision_ing + gastos_totales + com_cambio
+                                        # Sumas redondeadas para evitar el "fantasma" de los decimales
+                                        gastos_totales = round(gastos_bolsa + impuestos, 2)
+                                        total_comision = round(comision_ing + gastos_totales + com_cambio, 2)
 
                                         registros_a_subir.append({
                                             "ISIN": isin,
@@ -675,7 +670,7 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                                 if registros_a_subir:
                                     supabase.table("MovimientosCompraVenta").insert(registros_a_subir).execute()
                                     st.success(f"✅ ¡Se han guardado {len(registros_a_subir)} movimientos NUEVOS en la base de datos!")
-                                    st.balloons() # ¡Para celebrar que todo cuadra!
+                                    st.balloons() 
                                 else:
                                     st.info("ℹ️ No se han guardado datos. Todos los PDFs procesados ya estaban registrados en Supabase (Duplicados detectados y omitidos).")
 
