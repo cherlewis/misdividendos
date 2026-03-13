@@ -366,6 +366,7 @@ elif opcion == "🛒 Compras/Ventas a Excel":
         # 1. LECTURA Y PROCESAMIENTO (Solo se hace una vez)
         if "ops_df" not in st.session_state or st.session_state.get("ops_archivos") != nombres_archivos:
             datos_operaciones = []
+            archivos_fallidos = [] # 🕵️‍♂️ LISTA DE CHIVATOS
             total_archivos = len(archivos_pdf_op)
             barra_progreso = st.progress(0)
             texto_estado = st.empty()
@@ -395,6 +396,8 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                                 titulos, empresa, isin, mercado, tipo_op, precio, importe_op, comision_ing, gastos_bolsa, impuestos, importe_total = datos
                                 comision_cambio = "0,00 EUR"
                             else:
+                                # 🚨 Si no cumple el patrón, lo anotamos y pasamos al siguiente
+                                archivos_fallidos.append(archivo.name)
                                 continue
                                 
                             fecha_ejecucion = match_fecha.group(2).strip()[:10] if match_fecha else "No encontrada"
@@ -413,8 +416,11 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                                 "Es_Derecho": es_derecho,
                                 "Titulos_Originales_PDF": titulos 
                             })
+                        else:
+                            archivos_fallidos.append(archivo.name)
                 except Exception as e:
-                    st.warning(f"⚠️ Error al procesar '{archivo.name}'. Se ha omitido.")
+                    # 🚨 Si hay un error real de lectura del PDF, también lo anotamos
+                    archivos_fallidos.append(archivo.name)
                 
                 gc.collect()
                 barra_progreso.progress((i + 1) / total_archivos)
@@ -486,7 +492,15 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                 
                 st.session_state["ops_df"] = df_op
                 st.session_state["ops_archivos"] = nombres_archivos
+                st.session_state["ops_fallidos"] = archivos_fallidos # Guardamos los chivatos
                 st.success(f"¡Se procesaron {len(df_op)} archivo(s) con éxito!")
+
+        # ---------------------------------------------------------------------
+        # 🔔 AVISO DE ARCHIVOS FALLIDOS (Si los hay)
+        # ---------------------------------------------------------------------
+        if st.session_state.get("ops_fallidos"):
+            lista_fallos = "\n".join([f"- {f}" for f in st.session_state["ops_fallidos"]])
+            st.warning(f"⚠️ **Archivos omitidos ({len(st.session_state['ops_fallidos'])}):** No se han podido procesar porque no tienen el formato exacto de Compra/Venta de ING:\n\n{lista_fallos}")
 
         # ---------------------------------------------------------------------
         # 2. INTERFAZ PARA INTRODUCIR ACCIONES EQUIVALENTES
@@ -520,7 +534,6 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                         with col1:
                             st.info(f"**{empresa_nombre}** | El **{fecha_compra}** gastaste **{dinero_gastado}** comprando **{derechos_comprados}** derechos.")
                         with col2:
-                            # 🎯 CAMBIO AQUÍ: Ahora es un número entero limpio, sin decimales (step=1, min_value=1, value=1)
                             nuevos_titulos_dict[idx] = st.number_input(
                                 f"Acciones obtenidas", 
                                 min_value=1, 
@@ -537,7 +550,6 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                             
                             nuevo_precio = dinero_total / nuevas_acciones if nuevas_acciones > 0 else 0
                             
-                            # 🎯 CAMBIO AQUÍ: Forzamos a que el título se guarde como String sin decimales
                             st.session_state["ops_df"].at[idx, 'Títulos'] = str(nuevas_acciones)
                             st.session_state["ops_df"].at[idx, 'Precio'] = f"{nuevo_precio:.4f} EUR".replace('.', ',')
                             st.session_state["ops_df"].at[idx, 'Operación'] = "Compra (Suscripción Acciones)"
@@ -573,6 +585,7 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                 st.dataframe(df_export)
                 csv_op = df_export.to_csv(index=False, sep=";").encode('utf-8-sig')
                 st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv_op, file_name='operaciones_bolsa_enriquecido.csv', mime='text/csv')
+
 
 
 
