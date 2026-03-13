@@ -1053,33 +1053,36 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
 
     df_empresas = cargar_empresas()
 
-    # 3. Interfaz con 5 Pestañas (¡Añadida la pestaña de Peligro!)
+    # 3. Interfaz con 5 Pestañas
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["➕ Añadir", "✏️ Editar", "📋 Ver Tabla", "🔄 Importar / Exportar", "🚨 Peligro"])
 
     # --- PESTAÑA 1: AÑADIR ---
     with tab1:
         st.subheader("Añadir una nueva empresa")
         with st.form("form_add", clear_on_submit=True):
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 isin_add = st.text_input("ISIN (ej. US7134481081)")
-                nombre_add = st.text_input("Nombre en ING (ej. PEPSICO)")
-                nombre_hac_add = st.text_input("Nombre en Hacienda (ej. CODIGO: US7134481081)")
+                nombre_add = st.text_input("Nombre en ING")
+                nombre_hac_add = st.text_input("Nombre en Hacienda")
             with col2:
                 pais_add = st.text_input("País (ej. 🇺🇸 USA)")
-                sector_add = st.text_input("Sector (ej. Consumo Defensivo)")
-                subsector_add = st.text_input("Subsector (ej. Bebidas)")
+                sector_add = st.text_input("Sector")
+                subsector_add = st.text_input("Subsector")
+            with col3:
+                cap_add = st.text_input("Capitalización (ej. Large CAP)")
+                ticker_add = st.text_input("Ticker (Google, ej. NASDAQ:PEP)")
+                ticker_y_add = st.text_input("Ticker Yahoo (ej. PEP)")
+                moneda_add = st.text_input("Moneda (ej. USD, EUR)")
 
             submit_add = st.form_submit_button("💾 Guardar Empresa")
             if submit_add:
                 if nombre_add and isin_add:
                     nueva_empresa = {
-                        "ISIN": isin_add, 
-                        "NombreING": nombre_add,
-                        "NombreHacienda": nombre_hac_add,
-                        "Pais": pais_add, 
-                        "Sector": sector_add, 
-                        "Subsector": subsector_add
+                        "ISIN": isin_add, "NombreING": nombre_add, "NombreHacienda": nombre_hac_add,
+                        "Pais": pais_add, "Sector": sector_add, "Subsector": subsector_add,
+                        "Capitalizacion": cap_add, "Ticker": ticker_add, 
+                        "TickerYahoo": ticker_y_add, "MonedaCotizacion": moneda_add
                     }
                     supabase.table("Empresas").insert(nueva_empresa).execute()
                     st.success(f"✅ ¡{nombre_add} guardada correctamente!")
@@ -1097,25 +1100,28 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
             datos_actuales = df_empresas[df_empresas['NombreING'] == empresa_seleccionada].iloc[0]
 
             with st.form("form_edit"):
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 with col1:
                     isin_ed = st.text_input("ISIN", value=datos_actuales.get('ISIN', ''))
                     nombre_ed = st.text_input("Nombre en ING", value=datos_actuales.get('NombreING', ''))
-                    nombre_hac_ed = st.text_input("Nombre en Hacienda", value=datos_actuales.get('NombreHacienda', '') or '')
+                    nombre_hac_ed = st.text_input("Nombre Hacienda", value=datos_actuales.get('NombreHacienda', '') or '')
                 with col2:
                     pais_ed = st.text_input("País", value=datos_actuales.get('Pais', '') or '')
                     sector_ed = st.text_input("Sector", value=datos_actuales.get('Sector', '') or '')
                     subsector_ed = st.text_input("Subsector", value=datos_actuales.get('Subsector', '') or '')
+                with col3:
+                    cap_ed = st.text_input("Capitalización", value=datos_actuales.get('Capitalizacion', '') or '')
+                    ticker_ed = st.text_input("Ticker (Google)", value=datos_actuales.get('Ticker', '') or '')
+                    ticker_y_ed = st.text_input("Ticker Yahoo", value=datos_actuales.get('TickerYahoo', '') or '')
+                    moneda_ed = st.text_input("Moneda", value=datos_actuales.get('MonedaCotizacion', '') or '')
 
                 submit_edit = st.form_submit_button("🔄 Actualizar Cambios")
                 if submit_edit:
                     cambios = {
-                        "ISIN": isin_ed, 
-                        "NombreING": nombre_ed,
-                        "NombreHacienda": nombre_hac_ed,
-                        "Pais": pais_ed, 
-                        "Sector": sector_ed, 
-                        "Subsector": subsector_ed
+                        "ISIN": isin_ed, "NombreING": nombre_ed, "NombreHacienda": nombre_hac_ed,
+                        "Pais": pais_ed, "Sector": sector_ed, "Subsector": subsector_ed,
+                        "Capitalizacion": cap_ed, "Ticker": ticker_ed, 
+                        "TickerYahoo": ticker_y_ed, "MonedaCotizacion": moneda_ed
                     }
                     supabase.table("Empresas").update(cambios).eq("id", str(datos_actuales['id'])).execute()
                     st.success(f"✅ ¡Datos de {nombre_ed} actualizados!")
@@ -1125,37 +1131,39 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
         else:
             st.info("No hay empresas en la base de datos todavía.")
 
-    # --- PESTAÑA 3: VER TABLA (AHORA CON PRECIOS EN VIVO) ---
+    # --- PESTAÑA 3: VER TABLA Y PRECIOS EN VIVO ---
     with tab3:
         st.subheader("Base de Datos Actual")
         if not df_empresas.empty:
-            # Mostramos las columnas que tienes en tu nuevo esquema
-            columnas_mostrar = ["ISIN", "NombreING", "Ticker", "Pais", "Sector", "Capitalizacion"]
-            
-            # Filtramos para mostrar solo las columnas que realmente existen en el DataFrame
+            # 💡 MEJORA: Añadimos TickerYahoo a las columnas visibles
+            columnas_mostrar = ["ISIN", "NombreING", "Ticker", "TickerYahoo", "Pais", "Sector", "Capitalizacion"]
             cols_existentes = [col for col in columnas_mostrar if col in df_empresas.columns]
             st.dataframe(df_empresas[cols_existentes], use_container_width=True)
             
             st.markdown("---")
             st.write("📈 **Añadir datos del mercado en tiempo real**")
             if st.button("🔄 Cargar Cotizaciones en Vivo"):
-                if "Ticker" not in df_empresas.columns:
-                    st.error("Necesitas asegurar que la columna 'Ticker' esté cargada desde Supabase.")
+                if "TickerYahoo" not in df_empresas.columns:
+                    st.error("Necesitas asegurar que la columna 'TickerYahoo' esté cargada desde Supabase.")
                 else:
                     import yfinance as yf
                     with st.spinner("Conectando con Wall Street para descargar precios..."):
                         precios_actuales = []
                         variaciones = []
                         
-                        # Recorremos cada empresa para buscar su precio
                         for idx, row in df_empresas.iterrows():
-                            ticker = row.get("Ticker", "")
-                            if pd.notna(ticker) and str(ticker).strip() != "":
+                            # 💡 MEJORA CLAVE: Ahora le decimos a Wall Street que busque el TickerYahoo
+                            ticker_bursatil = row.get("TickerYahoo", "")
+                            
+                            # Si TickerYahoo está vacío, probamos con el Ticker normal por si acaso
+                            if pd.isna(ticker_bursatil) or str(ticker_bursatil).strip() == "":
+                                ticker_bursatil = row.get("Ticker", "")
+
+                            if pd.notna(ticker_bursatil) and str(ticker_bursatil).strip() != "":
                                 try:
-                                    # Descargamos la info del ticker
-                                    info = yf.Ticker(str(ticker).strip()).info
+                                    info = yf.Ticker(str(ticker_bursatil).strip()).info
                                     precio = info.get('currentPrice', info.get('regularMarketPrice', 0))
-                                    moneda = info.get('currency', 'EUR')
+                                    moneda = info.get('currency', row.get('MonedaCotizacion', 'EUR'))
                                     cierre_ant = info.get('previousClose', 0)
                                     
                                     if precio > 0:
@@ -1172,15 +1180,13 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                                 precios_actuales.append("Sin Ticker")
                                 variaciones.append("-")
                         
-                        # Añadimos las COLUMNAS VIRTUALES al DataFrame solo para mostrarlas
                         df_empresas_vivo = df_empresas.copy()
                         df_empresas_vivo["Precio Actual"] = precios_actuales
                         df_empresas_vivo["Variación Hoy"] = variaciones
                         
                         st.success("¡Cotizaciones actualizadas al segundo!")
                         
-                        # Mostramos la tabla enriquecida
-                        cols_finales = ["NombreING", "Ticker", "Precio Actual", "Variación Hoy", "Sector"]
+                        cols_finales = ["NombreING", "TickerYahoo", "Precio Actual", "Variación Hoy", "Sector"]
                         cols_finales_existentes = [c for c in cols_finales if c in df_empresas_vivo.columns]
                         st.dataframe(df_empresas_vivo[cols_finales_existentes], use_container_width=True)
 
@@ -1196,15 +1202,17 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
             st.subheader("📤 Copia de Seguridad")
             st.write("Descarga todas tus empresas en formato Excel/CSV.")
             if not df_empresas.empty:
-                columnas_export = ["ISIN", "NombreING", "NombreHacienda", "Pais", "Sector", "Subsector"]
-                csv_export = df_empresas[columnas_export].to_csv(index=False, sep=";").encode('utf-8-sig')
+                # 💡 MEJORA: Exportar las nuevas columnas para no perderlas
+                columnas_export = ["ISIN", "NombreING", "NombreHacienda", "Pais", "Sector", "Subsector", "Capitalizacion", "Ticker", "TickerYahoo", "MonedaCotizacion"]
+                cols_exp_existentes = [c for c in columnas_export if c in df_empresas.columns]
+                csv_export = df_empresas[cols_exp_existentes].to_csv(index=False, sep=";").encode('utf-8-sig')
                 st.download_button(label="⬇️ Descargar CSV", data=csv_export, file_name="BaseDatos_Empresas.csv", mime="text/csv")
             else:
                 st.warning("No hay datos para exportar.")
                 
         with col_imp:
             st.subheader("📥 Carga Masiva (Anti-Duplicados)")
-            st.write("Sube un CSV. **Obligatorio:** Las columnas deben ser exactamente: `ISIN`, `NombreING`, `NombreHacienda`, `Pais`, `Sector`, `Subsector`.")
+            st.write("Sube tu CSV con tus datos. **Asegúrate de que los nombres de las columnas coincidan con la base de datos**.")
             archivo_csv = st.file_uploader("Sube tu archivo CSV", type=["csv"])
             
             if archivo_csv:
@@ -1257,15 +1265,17 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
             
             if st.button("🗑️ SÍ, BORRAR TODA LA BASE DE DATOS", type="primary"):
                 try:
-                    # Borramos todos los registros con ID mayor a 0
                     supabase.table("Empresas").delete().gt("id", 0).execute()
-                    
                     st.success("✅ ¡Base de datos vaciada por completo!")
                     import time
                     time.sleep(3)
                     st.rerun()
                 except Exception as e:
                     st.error(f"❌ Error al intentar borrar: {e}")
+
+
+
+
 
 
 
