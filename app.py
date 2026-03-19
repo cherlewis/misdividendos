@@ -184,59 +184,62 @@ if opcion == "📊 Cuadro de Mando (Dashboard)":
 
 
 
-
-
 # ==========================================
 # 🚀 APLICACIÓN 1: DIVIDENDOS
 # ==========================================
-if opcion == "📊 Dividendos a Excel":
+elif opcion == "📊 Dividendos a Excel":
     st.title("📄 Extractor de Dividendos a Excel")
     st.write("Sube tus PDFs de dividendos de ING. Optimizado para detectar importes 'totales' y fechas de abono.")
-    archivos_pdf = st.file_uploader("Sube tus PDFs de Dividendos aquí", type=["pdf"], accept_multiple_files=True)
+    
+    archivos_pdf = st.file_uploader("Sube tus PDFs de Dividendos aquí", type=["pdf"], accept_multiple_files=True, key="divs")
 
     if archivos_pdf:
-        datos_dividendos = []
-        total_archivos = len(archivos_pdf)
-        barra_progreso = st.progress(0)
-        texto_estado = st.empty()
+        # Generamos una firma con los nombres para saber si has subido PDFs nuevos
+        nombres_archivos = "".join([a.name for a in archivos_pdf])
+        
+        # ⚡ MEMORIA CACHÉ: Solo procesa si son archivos nuevos
+        if "divs_df" not in st.session_state or st.session_state.get("divs_archivos") != nombres_archivos:
+            datos_dividendos = []
+            archivos_fallidos = [] # 🕵️‍♂️ LISTA NEGRA DE ERRORES
+            total_archivos = len(archivos_pdf)
+            barra_progreso = st.progress(0)
+            texto_estado = st.empty()
 
-        for i, archivo in enumerate(archivos_pdf):
-            texto_estado.text(f"⏳ Procesando ({i+1}/{total_archivos}): {archivo.name}...")
-            try:
-                import pdfplumber
-                with pdfplumber.open(archivo) as pdf:
-                    texto = pdf.pages[0].extract_text()
-                    
-                    if texto:
-                        # 1. EMPRESA: Buscamos "Valor:" pero ignoramos si viene de "Fecha valor"
-                        # Usamos una búsqueda más precisa para evitar los encabezados
+            import pdfplumber # Lo importamos fuera del bucle para ahorrar recursos
+            
+            for i, archivo in enumerate(archivos_pdf):
+                texto_estado.text(f"⏳ Procesando ({i+1}/{total_archivos}): {archivo.name}...")
+                try:
+                    with pdfplumber.open(archivo) as pdf:
+                        texto = pdf.pages[0].extract_text()
+                        
+                        if not texto:
+                            raise ValueError("El PDF está vacío o protegido.")
+                            
+                        # 1. EMPRESA
                         match_empresa = re.search(r"(?<!Fecha\s)Valor\s*[:\-]?\s*([A-Za-z0-9\.\-\&\' ]+)", texto, re.IGNORECASE)
                         empresa = match_empresa.group(1).strip() if match_empresa else "Empresa"
                         
                         if empresa == "Empresa" or "Cuenta de abono" in empresa:
-                             # Intento B: Buscar línea que contenga INC, CORP, SA o similar
-                             match_fallback = re.search(r"([A-Z][A-Z\s\.]+(?:INC|CORP|SA|PLC|AG|NV).*)", texto)
-                             if match_fallback: empresa = match_fallback.group(1).strip()
+                            match_fallback = re.search(r"([A-Z][A-Z\s\.]+(?:INC|CORP|SA|PLC|AG|NV).*)", texto)
+                            if match_fallback: empresa = match_fallback.group(1).strip()
 
                         if empresa != "Empresa":
                             empresa = empresa.split("   ")[0].split("(")[0].strip()
 
-                        # 2. FECHAS: Priorizamos la fecha que NO sea la "Fecha valor"
+                        # 2. FECHAS
                         fechas_todas = re.findall(r"(\d{2}/\d{2}/\d{4})", texto)
-                        # En Pepsi, la fecha de abono suele ser la más reciente o la que aparece cerca de "Fecha" a secas
                         match_fecha_clara = re.search(r"(?<!valor\s)Fecha\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})", texto, re.IGNORECASE)
                         fecha_abono = match_fecha_clara.group(1) if match_fecha_clara else (fechas_todas[-1] if fechas_todas else "00/00/0000")
                         
-                        # 3. IMPORTES: Captura ultra-flexible (busca la etiqueta y luego el primer número con moneda)
+                        # 3. IMPORTES
                         def extraer_dinero(etiqueta, txt):
-                            # Busca la etiqueta y salta cualquier palabra hasta encontrar un número con coma y moneda/símbolo
                             patron = etiqueta + r".*?([\d\.,]+\s*[A-Z€$]{1,3})"
                             res = re.search(patron, txt, re.IGNORECASE | re.DOTALL)
                             return res.group(1).strip() if res else "0,00 EUR"
 
                         importe_bruto = extraer_dinero("bruto", texto)
                         retencion_origen = extraer_dinero("origen", texto)
-                        # Para destino, a veces ING solo pone "Retención:"
                         retencion_destino = extraer_dinero("destino", texto)
                         if retencion_destino == "0,00 EUR":
                             retencion_destino = extraer_dinero("Retención:", texto)
@@ -259,92 +262,111 @@ if opcion == "📊 Dividendos a Excel":
                             "Divisa / Cambio": cambio_divisa,
                             "Archivo": archivo.name
                         })
-            except Exception as e:
-                st.error(f"⚠️ Error al leer '{archivo.name}': {e}")
-            
-            import gc
-            gc.collect()
-            barra_progreso.progress((i + 1) / total_archivos)
-
-        texto_estado.empty()
-
-        if datos_dividendos:
-            import pandas as pd
-            df = pd.DataFrame(datos_dividendos)
-
-
-            # --- CRUCE CON BASE DE DATOS (Con Traductor de Derechos) ---
-            with st.spinner("🧠 Cruzando con tu Base de Datos..."):
-                try:
-                    from supabase import create_client, Client
-                    url: str = st.secrets["SUPABASE_URL"]
-                    key: str = st.secrets["SUPABASE_KEY"]
-                    supabase: Client = create_client(url, key)
-                    respuesta = supabase.table("Empresas").select("ISIN, NombreING, Pais, Sector, Subsector, NombreHacienda").execute()
-                    df_db = pd.DataFrame(respuesta.data)
-                    db_nombre = {str(row["NombreING"]).upper().strip(): row.to_dict() for _, row in df_db.iterrows()} if not df_db.empty else {}
-
-                    sectores, subsectores, paises, nombres_ing, nombres_hac, isins = [], [], [], [], [], []
-                    
-                    for _, row in df.iterrows():
-                        emp_pdf = str(row["Empresa_PDF"]).upper().strip()
-                        
-                        # 🕵️‍♂️ TRADUCTOR DE DERECHOS (Igual que en la App 2)
-                        # Si es un derecho, lo "traducimos" al nombre de la empresa matriz
-                        if emp_pdf.startswith("IBE.D"): emp_pdf = "IBERDROLA"
-                        elif emp_pdf.startswith("VIS.D"): emp_pdf = "VISCOFAN"
-                        elif emp_pdf.startswith("VID.D"): emp_pdf = "VIDRALA"
-                        elif emp_pdf.startswith("REP.D"): emp_pdf = "REPSOL"
-                        elif emp_pdf.startswith("TEF.D"): emp_pdf = "TELEFONICA"
-                        elif emp_pdf.startswith("ACS.D"): emp_pdf = "ACS"
-                        elif emp_pdf.startswith("FER.D"): emp_pdf = "FERROVIAL"
-                        elif emp_pdf.startswith("ELE.D"): emp_pdf = "ENDESA"
-
-                        match = db_nombre.get(emp_pdf)
-                        if not match:
-                            for n_db, d_db in db_nombre.items():
-                                if n_db in emp_pdf or emp_pdf in n_db:
-                                    match = d_db; break
-                        
-                        if match:
-                            sectores.append(match.get("Sector", "Pendiente"))
-                            subsectores.append(match.get("Subsector", "Pendiente"))
-                            paises.append(match.get("Pais", "Desconocido"))
-                            isins.append(match.get("ISIN", ""))
-                            nombres_ing.append(match.get("NombreING", row["Empresa_PDF"]))
-                            nombres_hac.append(match.get("NombreHacienda", ""))
-                        else:
-                            sectores.append("Pendiente")
-                            subsectores.append("Pendiente")
-                            paises.append("Desconocido")
-                            isins.append("")
-                            nombres_ing.append(row["Empresa_PDF"])
-                            nombres_hac.append("Revisar")
-
-                    df["Sector"], df["Subsector"], df["Pais"] = sectores, subsectores, paises
-                    df["ISIN"], df["NombreING"], df["NombreHacienda"] = isins, nombres_ing, nombres_hac
-
-                    
-                    cols_finales = ["Fecha", "NombreING", "ISIN", "Pais", "Sector", "Subsector", "Títulos", "Importe Bruto", "Ret. Origen", "Ret. Destino", "Importe Neto", "Divisa / Cambio", "NombreHacienda", "Archivo"]
-                    df = df[cols_finales]
                 except Exception as e:
-                    st.error(f"⚠️ Error al cruzar datos: {e}")
+                    # 🚨 SI FALLA, LO APUNTA EN LA LISTA NEGRA Y SIGUE CON EL SIGUIENTE
+                    archivos_fallidos.append(archivo.name)
+            
+                # 🧹 VACIADO AGRESIVO DE MEMORIA RAM POR CADA PDF
+                import gc
+                gc.collect()
+                barra_progreso.progress((i + 1) / total_archivos)
 
-            st.success(f"¡Se procesaron {len(df)} archivo(s) con éxito!")
-            df['Fecha_Temporal'] = pd.to_datetime(df['Fecha'], format='%d/%m/%Y', errors='coerce')
-            df = df.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
+            texto_estado.empty()
 
-            # Fila de Totales
-            fila_totales = {col: "" for col in df.columns}
+            if datos_dividendos:
+                df = pd.DataFrame(datos_dividendos)
+
+                # --- CRUCE CON BASE DE DATOS ---
+                with st.spinner("🧠 Cruzando con tu Base de Datos..."):
+                    try:
+                        from supabase import create_client, Client
+                        url = st.secrets["SUPABASE_URL"]
+                        key = st.secrets["SUPABASE_KEY"]
+                        supabase = create_client(url, key)
+                        respuesta = supabase.table("Empresas").select("ISIN, NombreING, Pais, Sector, Subsector, NombreHacienda").execute()
+                        df_db = pd.DataFrame(respuesta.data)
+                        db_nombre = {str(row["NombreING"]).upper().strip(): row.to_dict() for _, row in df_db.iterrows()} if not df_db.empty else {}
+
+                        sectores, subsectores, paises, nombres_ing, nombres_hac, isins = [], [], [], [], [], []
+                        
+                        for _, row in df.iterrows():
+                            emp_pdf = str(row["Empresa_PDF"]).upper().strip()
+                            
+                            if emp_pdf.startswith("IBE.D"): emp_pdf = "IBERDROLA"
+                            elif emp_pdf.startswith("VIS.D"): emp_pdf = "VISCOFAN"
+                            elif emp_pdf.startswith("VID.D"): emp_pdf = "VIDRALA"
+                            elif emp_pdf.startswith("REP.D"): emp_pdf = "REPSOL"
+                            elif emp_pdf.startswith("TEF.D"): emp_pdf = "TELEFONICA"
+                            elif emp_pdf.startswith("ACS.D"): emp_pdf = "ACS"
+                            elif emp_pdf.startswith("FER.D"): emp_pdf = "FERROVIAL"
+                            elif emp_pdf.startswith("ELE.D"): emp_pdf = "ENDESA"
+
+                            match = db_nombre.get(emp_pdf)
+                            if not match:
+                                for n_db, d_db in db_nombre.items():
+                                    if n_db in emp_pdf or emp_pdf in n_db:
+                                        match = d_db; break
+                            
+                            if match:
+                                sectores.append(match.get("Sector", "Pendiente"))
+                                subsectores.append(match.get("Subsector", "Pendiente"))
+                                paises.append(match.get("Pais", "Desconocido"))
+                                isins.append(match.get("ISIN", ""))
+                                nombres_ing.append(match.get("NombreING", row["Empresa_PDF"]))
+                                nombres_hac.append(match.get("NombreHacienda", ""))
+                            else:
+                                sectores.append("Pendiente")
+                                subsectores.append("Pendiente")
+                                paises.append("Desconocido")
+                                isins.append("")
+                                nombres_ing.append(row["Empresa_PDF"])
+                                nombres_hac.append("Revisar")
+
+                        df["Sector"], df["Subsector"], df["Pais"] = sectores, subsectores, paises
+                        df["ISIN"], df["NombreING"], df["NombreHacienda"] = isins, nombres_ing, nombres_hac
+                        
+                        cols_finales = ["Fecha", "NombreING", "ISIN", "Pais", "Sector", "Subsector", "Títulos", "Importe Bruto", "Ret. Origen", "Ret. Destino", "Importe Neto", "Divisa / Cambio", "NombreHacienda", "Archivo"]
+                        df = df[cols_finales]
+                    except Exception as e:
+                        st.error(f"⚠️ Error al cruzar datos: {e}")
+
+                # 📦 GUARDAR EN LA MEMORIA CACHÉ
+                st.session_state["divs_df"] = df
+                st.session_state["divs_archivos"] = nombres_archivos
+                st.session_state["divs_fallidos"] = archivos_fallidos
+                st.success(f"¡Se procesaron {len(df)} archivo(s) con éxito!")
+
+        # ---------------------------------------------------------------------
+        # 🔔 AVISO DE ARCHIVOS FALLIDOS (Se lee de la caché)
+        # ---------------------------------------------------------------------
+        if st.session_state.get("divs_fallidos"):
+            lista_fallos = "\n".join([f"- {f}" for f in st.session_state["divs_fallidos"]])
+            st.warning(f"⚠️ **Atención:** Hubo {len(st.session_state['divs_fallidos'])} archivo(s) que no se pudieron leer. Puede que estén corruptos o no sean de dividendos:\n\n{lista_fallos}")
+
+        # ---------------------------------------------------------------------
+        # RENDERIZAR TABLA Y DESCARGA
+        # ---------------------------------------------------------------------
+        if "divs_df" in st.session_state:
+            df_mostrar = st.session_state["divs_df"].copy()
+            
+            df_mostrar['Fecha_Temporal'] = pd.to_datetime(df_mostrar['Fecha'], format='%d/%m/%Y', errors='coerce')
+            df_mostrar = df_mostrar.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
+
+            fila_totales = {col: "" for col in df_mostrar.columns}
             fila_totales["Fecha"] = "TOTALES"
             for col in ["Importe Bruto", "Ret. Origen", "Ret. Destino", "Importe Neto"]:
-                suma = df[col].apply(lambda x: euro_a_numero(str(x)) if pd.notnull(x) and x != "" and str(x) != "0,00 EUR" else 0).sum()
+                suma = df_mostrar[col].apply(lambda x: euro_a_numero(str(x)) if pd.notnull(x) and x != "" and str(x) != "0,00 EUR" else 0).sum()
                 fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
             
-            df = pd.concat([df, pd.DataFrame([fila_totales])], ignore_index=True)
-            st.dataframe(df)
-            csv = df.to_csv(index=False, sep=";").encode('utf-8-sig')
+            df_mostrar = pd.concat([df_mostrar, pd.DataFrame([fila_totales])], ignore_index=True)
+            
+            st.dataframe(df_mostrar)
+            csv = df_mostrar.to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv, file_name='dividendos_enriquecidos.csv', mime='text/csv')
+
+
+
+
 
 
 
