@@ -2027,7 +2027,7 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     map_isin, map_hac, map_ing, map_name_to_isin, isins_en_db = {}, {}, {}, {}, set()
 
                 # -------------------------------------------------------------
-                # 🚨 DICCIONARIO DE CASOS ESPECIALES (Desactivado para la traducción)
+                # 🚨 DICCIONARIO DE CASOS ESPECIALES
                 # -------------------------------------------------------------
                 map_scrip_dividends = {}
                 
@@ -2077,8 +2077,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                         
                         if match_isin:
                             isin_encontrado = match_isin.group(1)
-                            if isin_encontrado in map_scrip_dividends:
-                                isin_encontrado = map_scrip_dividends[isin_encontrado]
                         else:
                             if emisor_upper in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_upper]
                             elif emisor_limpio in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_limpio]
@@ -2103,12 +2101,11 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 st.dataframe(df_aeat)
 
                 # -------------------------------------------------------------
-                # 🚨 ESCÁNER DE COHERENCIA CONTRA LA TABLA "EMPRESAS"
+                # 🚨 ESCÁNER DE COHERENCIA CON OPCIÓN A AÑADIR AUTOMÁTICAMENTE
                 # -------------------------------------------------------------
                 empresas_sin_isin = set()
-                isins_no_registrados = set()
+                dict_isins_faltantes = {} # Ahora usamos un diccionario para guardar la información
                 
-                # CHIVATO INTELIGENTE DE DERECHOS PARA EL AVISO
                 info_derechos_warning = {
                     "ES06670509O8": " ➡️ *Derechos de ACS*",
                     "ES06670509P5": " ➡️ *Derechos de ACS*",
@@ -2130,28 +2127,54 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     if not isin_val:
                         empresas_sin_isin.add(nom_val if nom_val else raw_nom)
                     elif isin_val not in isins_en_db:
-                        # Buscamos si es un derecho conocido
-                        etiqueta_extra = info_derechos_warning.get(isin_val, "")
-                        # Regla general para otros derechos en España
-                        if not etiqueta_extra and isin_val.startswith("ES06"):
-                            etiqueta_extra = " ➡️ *Posibles derechos de acción matriz*"
-                            
-                        isins_no_registrados.add(f"{nom_val} (ISIN: {isin_val}){etiqueta_extra}")
+                        if isin_val not in dict_isins_faltantes:
+                            etiqueta_extra = info_derechos_warning.get(isin_val, "")
+                            if not etiqueta_extra and isin_val.startswith("ES06"):
+                                etiqueta_extra = " ➡️ *Posibles derechos de acción matriz*"
+                                
+                            dict_isins_faltantes[isin_val] = {
+                                "nombre_hacienda": nom_val if nom_val else raw_nom,
+                                "etiqueta": etiqueta_extra
+                            }
 
-                if empresas_sin_isin or isins_no_registrados:
+                if empresas_sin_isin or dict_isins_faltantes:
                     st.warning("⚠️ **ATENCIÓN: Tienes tareas pendientes en tu Gestor de Empresas**")
                     
                     if empresas_sin_isin:
-                        st.markdown("**1️⃣ Empresas sin ISIN (Añádelas en el Gestor de Empresas):**")
+                        st.markdown("**1️⃣ Empresas sin ISIN (Añádelas a mano en el Gestor de Empresas):**")
                         for emp in sorted(list(empresas_sin_isin)):
                             st.write(f"- ❌ {emp}")
                             
-                    if isins_no_registrados:
+                    if dict_isins_faltantes:
                         st.markdown("**2️⃣ ISINs detectados en el Excel, pero que NO están guardados en tu base de datos:**")
-                        for isin_f in sorted(list(isins_no_registrados)):
-                            st.write(f"- 🔍 {isin_f}")
+                        for isin_f, data in dict_isins_faltantes.items():
+                            st.write(f"- 🔍 {data['nombre_hacienda']} (ISIN: {isin_f}){data['etiqueta']}")
                             
-                    st.info("💡 **Consejo:** Añade estas empresas en la pestaña '🏢 Gestor de Empresas (DB)' antes de auditar, para que el cruce sea 100% perfecto.")
+                        st.info("💡 Haz clic en el siguiente botón para añadirlos todos automáticamente a tu tabla de Empresas y no tener que hacerlo a mano.")
+                        
+                        # ⚡️ BOTÓN MÁGICO PARA AÑADIR A SUPABASE
+                        if st.button("➕ Añadir estos ISINs a mi Base de Datos", type="secondary", key="add_missing"):
+                            nuevos_registros = []
+                            for isin_f, data in dict_isins_faltantes.items():
+                                nombre_hac = data['nombre_hacienda']
+                                
+                                # Le damos un nombre bonito automáticamente si sabemos lo que es
+                                if "ACS" in data['etiqueta']: nombre_ing = "ACS DERECHOS"
+                                elif "Iberdrola" in data['etiqueta']: nombre_ing = "IBERDROLA DERECHOS"
+                                elif "L'Oréal" in data['etiqueta']: nombre_ing = "L'OREAL LEALTAD"
+                                else: nombre_ing = nombre_hac
+
+                                nuevos_registros.append({
+                                    "ISIN": isin_f,
+                                    "NombreHacienda": nombre_hac,
+                                    "NombreING": nombre_ing
+                                })
+                            
+                            try:
+                                supabase.table("Empresas").insert(nuevos_registros).execute()
+                                st.success("✅ ¡Registros añadidos con éxito! Vuelve a subir el Excel de Hacienda para que el Traductor los aplique.")
+                            except Exception as e:
+                                st.error(f"❌ Error al insertar en la base de datos: {e}")
                 else:
                     st.success("✅ ¡Matrícula de Honor! Todos los ISINs del Excel están perfectamente registrados en tu base de datos.")
 
@@ -2232,6 +2255,8 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                             st.error(f"❌ Error al comunicar con Supabase: {e}")
             except Exception as e:
                 st.error(f"❌ Error procesando el archivo: {e}")
+
+
 
 
 
