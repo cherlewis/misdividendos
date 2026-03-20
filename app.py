@@ -1790,7 +1790,17 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
     st.title("🏛️ Extractor Total del Informe Fiscal AEAT")
     st.write("Sube el archivo Excel o CSV de tus datos fiscales descargado de Hacienda. El sistema lo leerá, traducirá los nombres de las empresas y lo guardará en tu base de datos.")
 
-    ejercicio_fiscal_aeat = st.number_input("📅 ¿De qué Año Fiscal son estos datos?", min_value=2020, max_value=2050, value=2024)
+    from datetime import datetime
+    # 📅 Calculamos automáticamente el año fiscal (Año actual - 1)
+    anio_fiscal_defecto = datetime.now().year - 1
+
+    ejercicio_fiscal_aeat = st.number_input(
+        "📅 ¿De qué Año Fiscal son estos datos?", 
+        min_value=2020, 
+        max_value=2050, 
+        value=anio_fiscal_defecto
+    )
+    
     archivo_aeat = st.file_uploader("Sube el Excel/CSV de Hacienda", type=["csv", "xlsx", "xls"], key="inf_aeat_solo")
 
     if archivo_aeat:
@@ -1807,10 +1817,8 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 # -------------------------------------------------------------
                 # 🕵️‍♂️ CAZADOR DE CABECERAS (Para evitar el texto basura de Hacienda)
                 # -------------------------------------------------------------
-                # Comprobamos si las columnas actuales tienen nombres raros (ej. Unnamed: 0)
                 cols_actuales = " ".join([str(c).lower() for c in df_aeat.columns])
                 if "emisor" not in cols_actuales and "declarante" not in cols_actuales:
-                    # Buscamos la fila real de cabeceras en las 15 primeras filas
                     header_idx = -1
                     for idx, row in df_aeat.head(15).iterrows():
                         fila_texto = " ".join([str(val).lower() for val in row.values])
@@ -1819,9 +1827,7 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                             break
                     
                     if header_idx != -1:
-                        # Convertimos esa fila en las nuevas columnas
                         df_aeat.columns = [str(c).strip() for c in df_aeat.iloc[header_idx]]
-                        # Cortamos el dataframe para quedarnos solo con los datos limpios
                         df_aeat = df_aeat.iloc[header_idx + 1:].reset_index(drop=True)
                 # -------------------------------------------------------------
                 
@@ -1842,13 +1848,10 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 col_nom_dec = encontrar_columna(["nombre declarante", "apellidos", "razón social declarante", "razon social"])
                 col_clave = encontrar_columna(["clave"])
                 col_tipo = encontrar_columna(["tipo"])
-                # Ampliamos palabras clave por si Hacienda lo llama "rendimiento" en vez de íntegro
                 col_bruto = encontrar_columna(["íntegro", "integro", "bruto", "rendimiento", "importe"])
                 col_penal = encontrar_columna(["penalización", "penalizacion"])
                 col_ret = encontrar_columna(["retencion", "retención", "retenciones"])
                 col_gastos = encontrar_columna(["gastos", "deducibles"])
-                
-                # (Se ha eliminado col_rol para adaptarse a tu nuevo schema)
 
                 # 2️⃣ DESCARGAMOS TU DICCIONARIO DE EMPRESAS DESDE SUPABASE
                 try:
@@ -1866,70 +1869,90 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     map_isin, map_hac, map_ing = {}, {}, {}
 
 
-                st.info("💡 **Sistema Anti-Duplicados:** Al subir los datos, se reemplazarán automáticamente todos los registros que ya existan en la base de datos para el año seleccionado.")
+                st.info("💡 **Filtro Anti-Duplicados Activado:** El sistema ignorará inteligentemente cualquier dato que ya esté guardado en tu base de datos.")
 
                 if st.button("☁️ Subir a Base de Datos (informefiscalaeat)", type="primary"):
-                    registros_aeat = []
-                    
-                    for _, row in df_aeat.iterrows():
-                        val_bruto = euro_a_numero(row.get(col_bruto, 0)) if col_bruto else 0.0
-                        val_ret = euro_a_numero(row.get(col_ret, 0)) if col_ret else 0.0
-                        
-                        if val_bruto == 0 and val_ret == 0: 
-                            continue 
+                    with st.spinner("Comprobando duplicados y preparando la subida..."):
+                        try:
+                            # 3️⃣ TRAEMOS LO QUE YA EXISTE PARA CREAR LA "HUELLA DIGITAL"
+                            res_db = supabase.table("informefiscalaeat").select("nif_emisor, nombre_emisor, importe_integro").eq("ejercicio_fiscal", int(ejercicio_fiscal_aeat)).execute()
                             
-                        raw_codigo = str(row.get(col_codigo, "")).strip() if col_codigo else ""
-                        raw_emisor = str(row.get(col_nom_emi, "")).strip() if col_nom_emi else ""
-                        
-                        if raw_emisor.lower() in ["emisor", "nombre emisor", "nombre del emisor"]:
-                            continue
-                            
-                        # -------------------------------------------------------------
-                        # 🕵️ TRADUCTOR MÁGICO DE EMPRESAS
-                        # -------------------------------------------------------------
-                        codigo_upper = raw_codigo.upper()
-                        emisor_upper = raw_emisor.upper()
-                        
-                        nombre_traducido = raw_emisor 
-                        
-                        if emisor_upper in map_hac: nombre_traducido = map_hac[emisor_upper]
-                        elif codigo_upper in map_hac: nombre_traducido = map_hac[codigo_upper]
-                        elif emisor_upper in map_isin: nombre_traducido = map_isin[emisor_upper]
-                        elif codigo_upper in map_isin: nombre_traducido = map_isin[codigo_upper]
-                        else:
-                            for n_ing in map_ing.keys():
-                                if n_ing in emisor_upper or n_ing in codigo_upper:
-                                    nombre_traducido = map_ing[n_ing]
-                                    break
-                        # -------------------------------------------------------------
+                            db_existentes = set()
+                            if res_db.data:
+                                for row_db in res_db.data:
+                                    nif_db = str(row_db.get("nif_emisor", "")).strip()
+                                    nom_db = str(row_db.get("nombre_emisor", "")).strip()
+                                    identificador = nif_db if nif_db else nom_db 
+                                    imp_db = round(float(row_db.get("importe_integro", 0)), 2)
+                                    
+                                    firma = f"{identificador}_{imp_db}"
+                                    db_existentes.add(firma)
 
-                        registro = {
-                            "nif_declarante": str(row.get(col_nif_dec, "")).strip()[:50] if col_nif_dec else "",
-                            "nombre_declarante": str(row.get(col_nom_dec, "")).strip()[:250] if col_nom_dec else "",
-                            "codigo_emisor": raw_codigo[:100],
-                            "nif_emisor": str(row.get(col_nif_emi, "")).strip()[:50] if col_nif_emi else "",
-                            "nombre_emisor": nombre_traducido[:250], 
-                            "clave": str(row.get(col_clave, "")).strip()[:50] if col_clave else "",
-                            "tipo": str(row.get(col_tipo, "")).strip()[:50] if col_tipo else "",
-                            "importe_integro": round(val_bruto, 2),
-                            "penalizacion": round(euro_a_numero(row.get(col_penal, 0)), 2) if col_penal else 0.0,
-                            "retenciones": round(val_ret, 2),
-                            "gastos_deducibles": round(euro_a_numero(row.get(col_gastos, 0)), 2) if col_gastos else 0.0,
-                            "ejercicio_fiscal": int(ejercicio_fiscal_aeat)
-                        }
-                        
-                        registros_aeat.append(registro)
-                    
-                    if registros_aeat:
-                        with st.spinner("Borrando datos antiguos y subiendo los nuevos..."):
-                            try:
-                                supabase.table("informefiscalaeat").delete().eq("ejercicio_fiscal", int(ejercicio_fiscal_aeat)).execute()
+                            registros_aeat = []
+                            
+                            for _, row in df_aeat.iterrows():
+                                val_bruto = euro_a_numero(row.get(col_bruto, 0)) if col_bruto else 0.0
+                                val_ret = euro_a_numero(row.get(col_ret, 0)) if col_ret else 0.0
+                                
+                                if val_bruto == 0 and val_ret == 0: 
+                                    continue 
+                                    
+                                raw_codigo = str(row.get(col_codigo, "")).strip() if col_codigo else ""
+                                raw_emisor = str(row.get(col_nom_emi, "")).strip() if col_nom_emi else ""
+                                
+                                if raw_emisor.lower() in ["emisor", "nombre emisor", "nombre del emisor"]:
+                                    continue
+                                    
+                                # Traductor Mágico de Empresas
+                                codigo_upper = raw_codigo.upper()
+                                emisor_upper = raw_emisor.upper()
+                                nombre_traducido = raw_emisor 
+                                
+                                if emisor_upper in map_hac: nombre_traducido = map_hac[emisor_upper]
+                                elif codigo_upper in map_hac: nombre_traducido = map_hac[codigo_upper]
+                                elif emisor_upper in map_isin: nombre_traducido = map_isin[emisor_upper]
+                                elif codigo_upper in map_isin: nombre_traducido = map_isin[codigo_upper]
+                                else:
+                                    for n_ing in map_ing.keys():
+                                        if n_ing in emisor_upper or n_ing in codigo_upper:
+                                            nombre_traducido = map_ing[n_ing]
+                                            break
+
+                                # Extraemos los valores para la Huella Digital del Excel
+                                nif_emi_excel = str(row.get(col_nif_emi, "")).strip()[:50] if col_nif_emi else ""
+                                identificador_excel = nif_emi_excel if nif_emi_excel else nombre_traducido[:250]
+                                importe_excel = round(val_bruto, 2)
+                                
+                                firma_actual = f"{identificador_excel}_{importe_excel}"
+
+                                # 🛡️ SOLO AÑADIMOS SI LA FIRMA NO EXISTE EN LA BASE DE DATOS
+                                if firma_actual not in db_existentes:
+                                    registro = {
+                                        "nif_declarante": str(row.get(col_nif_dec, "")).strip()[:50] if col_nif_dec else "",
+                                        "nombre_declarante": str(row.get(col_nom_dec, "")).strip()[:250] if col_nom_dec else "",
+                                        "codigo_emisor": raw_codigo[:100],
+                                        "nif_emisor": nif_emi_excel,
+                                        "nombre_emisor": nombre_traducido[:250], 
+                                        "clave": str(row.get(col_clave, "")).strip()[:50] if col_clave else "",
+                                        "tipo": str(row.get(col_tipo, "")).strip()[:50] if col_tipo else "",
+                                        "importe_integro": importe_excel,
+                                        "penalizacion": round(euro_a_numero(row.get(col_penal, 0)), 2) if col_penal else 0.0,
+                                        "retenciones": round(val_ret, 2),
+                                        "gastos_deducibles": round(euro_a_numero(row.get(col_gastos, 0)), 2) if col_gastos else 0.0,
+                                        "ejercicio_fiscal": int(ejercicio_fiscal_aeat)
+                                    }
+                                    registros_aeat.append(registro)
+                                    
+                                    db_existentes.add(firma_actual)
+                            
+                            if registros_aeat:
                                 supabase.table("informefiscalaeat").insert(registros_aeat).execute()
-                                st.success(f"✅ ¡{len(registros_aeat)} operaciones guardadas con éxito en tu base de datos para el año {ejercicio_fiscal_aeat}!")
+                                st.success(f"✅ ¡{len(registros_aeat)} operaciones NUEVAS guardadas con éxito para el año {ejercicio_fiscal_aeat}!")
                                 st.balloons()
-                            except Exception as e:
-                                st.error(f"❌ Error al comunicar con Supabase: {e}")
-                    else:
-                        st.warning("No se encontraron registros válidos para subir (revisa que el Excel tenga importes).")
+                            else:
+                                st.info("ℹ️ No se ha subido nada. Todos los datos de este Excel ya estaban en tu base de datos (0 duplicados).")
+                                
+                        except Exception as e:
+                            st.error(f"❌ Error al comunicar con Supabase: {e}")
             except Exception as e:
                 st.error(f"❌ Error procesando el archivo: {e}")
