@@ -87,6 +87,7 @@ opcion = st.sidebar.radio(
         "🛒 Compras/Ventas a Excel", 
         "🗂️ Renombrador de PDFs",
         "📄 Informe Fiscal (Div. y DRIPs)",
+        "🏛️ Extractor Informe Fiscal (AEAT)",
         "⚖️ Auditoría Hacienda vs ING",
         "📉 Calculadora Plusvalías (Hacienda)",
         "🏢 Gestor de Empresas (DB)",
@@ -1778,3 +1779,101 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
         st.error(f"Error al leer la tabla de Supabase: {e}")
 
 
+
+
+
+
+
+
+# ==========================================
+# 🚀 APLICACIÓN 10: EXTRACTOR INFORME FISCAL AEAT
+# ==========================================
+elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
+    st.title("🏛️ Extractor Total del Informe Fiscal AEAT")
+    st.write("Sube el archivo Excel o CSV de tus datos fiscales descargado de Hacienda. El sistema lo leerá y lo guardará en tu base de datos de Supabase.")
+
+    ejercicio_fiscal_aeat = st.number_input("📅 ¿De qué Año Fiscal son estos datos?", min_value=2020, max_value=2050, value=2024)
+    archivo_aeat = st.file_uploader("Sube el Excel/CSV de Hacienda", type=["csv", "xlsx", "xls"], key="inf_aeat_solo")
+
+    if archivo_aeat:
+        with st.spinner("Analizando formato de Hacienda..."):
+            try:
+                # Lectura flexible para Excel o CSV
+                if archivo_aeat.name.endswith('.csv'):
+                    df_aeat = pd.read_csv(archivo_aeat, sep=None, engine='python')
+                else:
+                    df_aeat = pd.read_excel(archivo_aeat)
+
+                df_aeat = df_aeat.fillna("")
+                
+                st.write("📊 **Vista previa de los datos detectados:**")
+                st.dataframe(df_aeat.head())
+
+                # Buscador inteligente de columnas (los nombres de AEAT pueden variar ligeramente)
+                cols = df_aeat.columns.tolist()
+                def encontrar_columna(claves):
+                    for col in cols:
+                        if any(c.lower() in col.lower() for c in claves): return col
+                    return None
+
+                col_codigo = encontrar_columna(["emisor", "código", "codigo"])
+                col_nif_emi = encontrar_columna(["nif emisor", "nif del emisor"])
+                col_nom_emi = encontrar_columna(["nombre emisor", "nombre del emisor"])
+                col_nif_dec = encontrar_columna(["nif declarante", "nif del declarante"])
+                col_nom_dec = encontrar_columna(["nombre declarante", "apellidos", "razón social declarante", "razon social"])
+                col_clave = encontrar_columna(["clave"])
+                col_tipo = encontrar_columna(["tipo"])
+                col_bruto = encontrar_columna(["íntegro", "integro", "bruto"])
+                col_penal = encontrar_columna(["penalización", "penalizacion"])
+                col_ret = encontrar_columna(["retencion", "retención", "retenciones"])
+                col_gastos = encontrar_columna(["gastos", "deducibles"])
+
+                st.info("💡 **Sistema Anti-Duplicados:** Al subir los datos, se reemplazarán automáticamente todos los registros que ya existan en la base de datos para el año seleccionado.")
+
+                if st.button("☁️ Subir a Base de Datos (informefiscalaeat)", type="primary"):
+                    registros_aeat = []
+                    for _, row in df_aeat.iterrows():
+                        val_bruto = euro_a_numero(row.get(col_bruto, 0)) if col_bruto else 0.0
+                        val_ret = euro_a_numero(row.get(col_ret, 0)) if col_ret else 0.0
+                        
+                        if val_bruto == 0 and val_ret == 0: 
+                            continue # Saltamos cabeceras o filas de totales vacías
+
+                        # Construimos el diccionario exactamente con tu schema SQL
+                        registro = {
+                            "codigo": str(row.get(col_codigo, "")).strip()[:100] if col_codigo else "",
+                            "nif_emisor": str(row.get(col_nif_emi, "")).strip()[:50] if col_nif_emi else "",
+                            "nombre_emisor": str(row.get(col_nom_emi, "")).strip()[:250] if col_nom_emi else "",
+                            "nif_declarante": str(row.get(col_nif_dec, "")).strip()[:50] if col_nif_dec else "",
+                            "nombre_declarante": str(row.get(col_nom_dec, "")).strip()[:250] if col_nom_dec else "",
+                            "clave": str(row.get(col_clave, "")).strip()[:50] if col_clave else "",
+                            "tipo": str(row.get(col_tipo, "")).strip()[:50] if col_tipo else "",
+                            "importe_integro": round(val_bruto, 2),
+                            "penalizacion": round(euro_a_numero(row.get(col_penal, 0)), 2) if col_penal else 0.0,
+                            "retenciones": round(val_ret, 2),
+                            "gastos_deducibles": round(euro_a_numero(row.get(col_gastos, 0)), 2) if col_gastos else 0.0,
+                            "ejercicio_fiscal": int(ejercicio_fiscal_aeat)
+                        }
+                        
+                        registros_aeat.append(registro)
+                    
+                    if registros_aeat:
+                        with st.spinner("Borrando datos antiguos y subiendo los nuevos..."):
+                            try:
+                                from supabase import create_client, Client
+                                supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+                                
+                                # 1️⃣ Borramos todo lo de ese año fiscal
+                                supabase.table("informefiscalaeat").delete().eq("ejercicio_fiscal", int(ejercicio_fiscal_aeat)).execute()
+                                
+                                # 2️⃣ Insertamos todo limpio
+                                supabase.table("informefiscalaeat").insert(registros_aeat).execute()
+                                
+                                st.success(f"✅ ¡{len(registros_aeat)} operaciones guardadas con éxito en tu base de datos para el año {ejercicio_fiscal_aeat}!")
+                                st.balloons()
+                            except Exception as e:
+                                st.error(f"❌ Error al comunicar con Supabase: {e}")
+                    else:
+                        st.warning("No se encontraron registros válidos para subir (revisa que el Excel tenga importes).")
+            except Exception as e:
+                st.error(f"❌ Error procesando el archivo: {e}")
