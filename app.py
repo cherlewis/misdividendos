@@ -1024,6 +1024,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
 
 
 
+
 # ==========================================
 # 🚀 APLICACIÓN 5: AUDITORÍA HACIENDA VS ING
 # ==========================================
