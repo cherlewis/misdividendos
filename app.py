@@ -1744,7 +1744,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                 from supabase import create_client, Client
                 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-                # 1️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA (Ahora pedimos también 'clave' y 'concepto')
+                # 1️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA
                 res_ing = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino, concepto").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
                 res_aeat = supabase.table("informefiscalaeat").select("id, isin, codigo_emisor, nombre_emisor, importe_integro, retenciones, clave").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
 
@@ -1822,7 +1822,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Dif_Ret": dif_r
                             })
                         else:
-                            # Huérfano de ING (como no está en AEAT, ponemos el concepto de ING)
+                            # Huérfano de ING
                             resultados.append({
                                 "Estado": "❌ Falta en AEAT",
                                 "Concepto": div_ing["concepto"],
@@ -1859,16 +1859,31 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
                     st.subheader("🎯 Resumen del Cruce Fiscal 1 a 1")
                     
+                    # --- CÁLCULO DE TOTALES ---
                     tot_bruto_ing = df_cruce["Bruto_ING"].sum()
                     tot_bruto_aeat = df_cruce["Bruto_AEAT"].sum()
                     dif_global_bruto = tot_bruto_ing - tot_bruto_aeat
 
-                    col1, col2, col3 = st.columns(3)
+                    # Cálculo del Bruto Consolidado (ING + AEAT)
+                    tot_bruto_consolidado = 0.0
+                    for _, row in df_cruce.iterrows():
+                        if "Falta en" in row["Estado"]:
+                            # Sumamos el que sea distinto de 0
+                            tot_bruto_consolidado += row["Bruto_ING"] if row["Bruto_ING"] != 0 else row["Bruto_AEAT"]
+                        else:
+                            # Si es OK o Descuadre Ret, sumamos solo el de ING
+                            tot_bruto_consolidado += row["Bruto_ING"]
+
+                    # --- RENDERIZADO DE LAS 4 CAJITAS ---
+                    col1, col2, col3, col4 = st.columns(4)
                     col1.metric("Bruto Total (ING)", f"{tot_bruto_ing:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
                     col2.metric("Bruto Total (AEAT)", f"{tot_bruto_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
                     
                     color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
                     col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
+                    
+                    # Nuestra nueva métrica estrella
+                    col4.metric("Bruto Total (Consolidado)", f"{tot_bruto_consolidado:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
 
                     st.markdown("### 🔍 Detalle Dividendo a Dividendo")
                     
