@@ -2014,7 +2014,8 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                         
                         if isin_val:
                             isins_en_db.add(isin_val)
-                            if nom_ing: map_isin[isin_val] = nom_ing
+                            if nom_ing and isin_val not in map_isin: 
+                                map_isin[isin_val] = nom_ing
                         if nom_hac and nom_ing: map_hac[nom_hac] = nom_ing
                         if nom_ing: map_ing[nom_ing] = nom_ing
                         
@@ -2030,7 +2031,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 # 🚨 DICCIONARIO DE CASOS ESPECIALES
                 # -------------------------------------------------------------
                 map_scrip_dividends = {}
-                
                 map_nombres_rebeldes = {
                     "BANCO DE SABADELL, S.A.": "ES0113860A34",
                     "BANCO SABADELL": "ES0113860A34"
@@ -2057,16 +2057,19 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                         
                     emisor_limpio = limpiar_ruido(emisor_upper)
 
+                    # A. TRADUCTOR DE NOMBRE INICIAL (Búsqueda difusa)
                     nombre_traducido = raw_emisor 
-                    if emisor_upper in map_hac: nombre_traducido = map_hac[emisor_upper]
-                    elif emisor_limpio in map_hac: nombre_traducido = map_hac[emisor_limpio]
-                    elif emisor_upper in map_isin: nombre_traducido = map_isin[emisor_upper]
+                    if emisor_upper in map_hac: 
+                        nombre_traducido = map_hac[emisor_upper]
+                    elif emisor_limpio in map_hac: 
+                        nombre_traducido = map_hac[emisor_limpio]
                     else:
-                        for n_ing in map_ing.keys():
-                            if n_ing and (n_ing in emisor_upper or n_ing in emisor_limpio):
+                        for n_ing in sorted(map_ing.keys(), key=len, reverse=True):
+                            if n_ing and len(n_ing) >= 4 and (n_ing in emisor_upper or n_ing in emisor_limpio):
                                 nombre_traducido = map_ing[n_ing]
                                 break
 
+                    # B. 🎯 CAZADOR DE ISIN
                     isin_encontrado = ""
                     
                     if emisor_upper in map_nombres_rebeldes:
@@ -2077,17 +2080,22 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                         
                         if match_isin:
                             isin_encontrado = match_isin.group(1)
+                            if isin_encontrado in map_scrip_dividends:
+                                isin_encontrado = map_scrip_dividends[isin_encontrado]
                         else:
                             if emisor_upper in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_upper]
                             elif emisor_limpio in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_limpio]
                             elif nombre_traducido.upper() in map_name_to_isin: isin_encontrado = map_name_to_isin[nombre_traducido.upper()]
                             else:
-                                for n_db, i_db in map_name_to_isin.items():
-                                    if n_db and (n_db in emisor_upper or n_db in emisor_limpio):
-                                        isin_encontrado = i_db
+                                for n_db in sorted(map_name_to_isin.keys(), key=len, reverse=True):
+                                    if n_db and len(n_db) >= 4 and (n_db in emisor_upper or n_db in emisor_limpio):
+                                        isin_encontrado = map_name_to_isin[n_db]
                                         break
                     
-                    if isin_encontrado in map_isin and nombre_traducido == raw_emisor:
+                    # 👑 C. REGLA DE ORO: EL ISIN ES EL REY
+                    # Si hemos cazado un ISIN y lo tienes en tu DB, forzamos su nombre oficial, 
+                    # ignorando cualquier coincidencia difusa previa.
+                    if isin_encontrado and isin_encontrado in map_isin:
                         nombre_traducido = map_isin[isin_encontrado]
 
                     return pd.Series([isin_encontrado, nombre_traducido])
@@ -2101,10 +2109,10 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 st.dataframe(df_aeat)
 
                 # -------------------------------------------------------------
-                # 🚨 ESCÁNER DE COHERENCIA CON OPCIÓN A AÑADIR AUTOMÁTICAMENTE
+                # 🚨 ESCÁNER DE COHERENCIA CONTRA LA TABLA "EMPRESAS"
                 # -------------------------------------------------------------
                 empresas_sin_isin = set()
-                dict_isins_faltantes = {} # Ahora usamos un diccionario para guardar la información
+                isins_no_registrados = set()
                 
                 info_derechos_warning = {
                     "ES06670509O8": " ➡️ *Derechos de ACS*",
@@ -2127,54 +2135,26 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     if not isin_val:
                         empresas_sin_isin.add(nom_val if nom_val else raw_nom)
                     elif isin_val not in isins_en_db:
-                        if isin_val not in dict_isins_faltantes:
-                            etiqueta_extra = info_derechos_warning.get(isin_val, "")
-                            if not etiqueta_extra and isin_val.startswith("ES06"):
-                                etiqueta_extra = " ➡️ *Posibles derechos de acción matriz*"
-                                
-                            dict_isins_faltantes[isin_val] = {
-                                "nombre_hacienda": nom_val if nom_val else raw_nom,
-                                "etiqueta": etiqueta_extra
-                            }
+                        etiqueta_extra = info_derechos_warning.get(isin_val, "")
+                        if not etiqueta_extra and isin_val.startswith("ES06"):
+                            etiqueta_extra = " ➡️ *Posibles derechos de acción matriz*"
+                            
+                        isins_no_registrados.add(f"{nom_val} (ISIN: {isin_val}){etiqueta_extra}")
 
-                if empresas_sin_isin or dict_isins_faltantes:
+                if empresas_sin_isin or isins_no_registrados:
                     st.warning("⚠️ **ATENCIÓN: Tienes tareas pendientes en tu Gestor de Empresas**")
                     
                     if empresas_sin_isin:
-                        st.markdown("**1️⃣ Empresas sin ISIN (Añádelas a mano en el Gestor de Empresas):**")
+                        st.markdown("**1️⃣ Empresas sin ISIN (Añádelas en el Gestor de Empresas):**")
                         for emp in sorted(list(empresas_sin_isin)):
                             st.write(f"- ❌ {emp}")
                             
-                    if dict_isins_faltantes:
+                    if isins_no_registrados:
                         st.markdown("**2️⃣ ISINs detectados en el Excel, pero que NO están guardados en tu base de datos:**")
-                        for isin_f, data in dict_isins_faltantes.items():
-                            st.write(f"- 🔍 {data['nombre_hacienda']} (ISIN: {isin_f}){data['etiqueta']}")
+                        for isin_f in sorted(list(isins_no_registrados)):
+                            st.write(f"- 🔍 {isin_f}")
                             
-                        st.info("💡 Haz clic en el siguiente botón para añadirlos todos automáticamente a tu tabla de Empresas y no tener que hacerlo a mano.")
-                        
-                        # ⚡️ BOTÓN MÁGICO PARA AÑADIR A SUPABASE
-                        if st.button("➕ Añadir estos ISINs a mi Base de Datos", type="secondary", key="add_missing"):
-                            nuevos_registros = []
-                            for isin_f, data in dict_isins_faltantes.items():
-                                nombre_hac = data['nombre_hacienda']
-                                
-                                # Le damos un nombre bonito automáticamente si sabemos lo que es
-                                if "ACS" in data['etiqueta']: nombre_ing = "ACS DERECHOS"
-                                elif "Iberdrola" in data['etiqueta']: nombre_ing = "IBERDROLA DERECHOS"
-                                elif "L'Oréal" in data['etiqueta']: nombre_ing = "L'OREAL LEALTAD"
-                                else: nombre_ing = nombre_hac
-
-                                nuevos_registros.append({
-                                    "ISIN": isin_f,
-                                    "NombreHacienda": nombre_hac,
-                                    "NombreING": nombre_ing
-                                })
-                            
-                            try:
-                                supabase.table("Empresas").insert(nuevos_registros).execute()
-                                st.success("✅ ¡Registros añadidos con éxito! Vuelve a subir el Excel de Hacienda para que el Traductor los aplique.")
-                            except Exception as e:
-                                st.error(f"❌ Error al insertar en la base de datos: {e}")
+                    st.info("💡 **Consejo:** Añade estas empresas en la pestaña '🏢 Gestor de Empresas (DB)' antes de auditar, para que el cruce sea 100% perfecto.")
                 else:
                     st.success("✅ ¡Matrícula de Honor! Todos los ISINs del Excel están perfectamente registrados en tu base de datos.")
 
