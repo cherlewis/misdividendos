@@ -981,7 +981,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                         "porcentaje_retencion_destino": pct_des,
                                         "importe_bruto": round(bruto_num, 2),
                                         "empresa": empresa_full,
-                                        "pais": obtener_bandera(isin_encontrado, empresa_full), # AHORA TIENE EL ISIN CORRECTO
+                                        "pais": obtener_bandera(isin_encontrado, empresa_full),
                                         "cuenta_valores": "",
                                         "numero_titulos": 0.0, 
                                         "cuenta_abono": "",
@@ -995,7 +995,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
             st.write("📊 **Vista previa de los datos estructurados:**")
             st.dataframe(df_ing)
 
-            st.info("💡 **Filtro Anti-Duplicados Activado:** El sistema identificará operaciones repetidas comparando el ISIN y el Importe Bruto.")
+            st.info("💡 **Filtro Anti-Duplicados Activado:** El sistema identificará operaciones repetidas comparando el ISIN y el Importe Bruto con lo que ya existe en la nube.")
 
             col_excel, col_db = st.columns(2)
             
@@ -1013,7 +1013,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                 if st.button("☁️ Subir a Base de Datos (informefiscaling)", type="primary", use_container_width=True):
                     with st.spinner("Comprobando duplicados y guardando en Supabase..."):
                         try:
-                            # Ya tenemos el cliente creado arriba, lo reusamos
+                            # 1️⃣ Traer existentes de la Base de Datos para crear la HUELLA DIGITAL
                             res_db = supabase.table("informefiscaling").select("isin, importe_bruto").eq("ejercicio_fiscal", int(ejercicio_fiscal_ing)).execute()
                             
                             db_existentes = []
@@ -1022,7 +1022,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                     isin_db = str(row_db.get("isin", "")).strip()
                                     imp_db = round(float(row_db.get("importe_bruto", 0)), 2)
                                     firma = f"{isin_db}_{imp_db}"
-                                    db_existentes.append(firma) 
+                                    db_existentes.append(firma) # Lista de lo que YA ESTÁ en la nube
                             
                             registros_a_subir = []
                             for _, row in df_ing.iterrows():
@@ -1030,7 +1030,9 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                 imp_excel = round(float(row["importe_bruto"]), 2)
                                 firma_actual = f"{isin_excel}_{imp_excel}"
                                 
+                                # 🛡️ Comprobación de duplicados (solo borra si estaba en la nube)
                                 if firma_actual in db_existentes:
+                                    # Lo tachamos de la lista "virtual" de la nube para permitir duplicados extra si los hay
                                     db_existentes.remove(firma_actual)
                                 else:
                                     registro = {
@@ -1052,7 +1054,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                         "ejercicio_fiscal": int(ejercicio_fiscal_ing) 
                                     }
                                     registros_a_subir.append(registro)
-                                    db_existentes.append(firma_actual)
+                                    # ❌ HEMOS ELIMINADO la línea problemática aquí que bloqueaba los duplicados internos
                             
                             if registros_a_subir:
                                 supabase.table("informefiscaling").insert(registros_a_subir).execute()
