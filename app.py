@@ -1803,9 +1803,29 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     df_aeat = pd.read_excel(archivo_aeat)
 
                 df_aeat = df_aeat.fillna("")
+
+                # -------------------------------------------------------------
+                # 🕵️‍♂️ CAZADOR DE CABECERAS (Para evitar el texto basura de Hacienda)
+                # -------------------------------------------------------------
+                # Comprobamos si las columnas actuales tienen nombres raros (ej. Unnamed: 0)
+                cols_actuales = " ".join([str(c).lower() for c in df_aeat.columns])
+                if "emisor" not in cols_actuales and "declarante" not in cols_actuales:
+                    # Buscamos la fila real de cabeceras en las 15 primeras filas
+                    header_idx = -1
+                    for idx, row in df_aeat.head(15).iterrows():
+                        fila_texto = " ".join([str(val).lower() for val in row.values])
+                        if "emisor" in fila_texto and ("integro" in fila_texto.replace("í", "i") or "retencion" in fila_texto.replace("ó", "o")):
+                            header_idx = idx
+                            break
+                    
+                    if header_idx != -1:
+                        # Convertimos esa fila en las nuevas columnas
+                        df_aeat.columns = [str(c).strip() for c in df_aeat.iloc[header_idx]]
+                        # Cortamos el dataframe para quedarnos solo con los datos limpios
+                        df_aeat = df_aeat.iloc[header_idx + 1:].reset_index(drop=True)
+                # -------------------------------------------------------------
                 
-                # 🎯 Quitamos el .head() para que veas todas las filas
-                st.write("📊 **Vista previa de los datos brutos:**")
+                st.write("📊 **Vista previa de los datos limpios:**")
                 st.dataframe(df_aeat)
 
                 # Buscador inteligente de columnas
@@ -1822,11 +1842,12 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 col_nom_dec = encontrar_columna(["nombre declarante", "apellidos", "razón social declarante", "razon social"])
                 col_clave = encontrar_columna(["clave"])
                 col_tipo = encontrar_columna(["tipo"])
-                col_bruto = encontrar_columna(["íntegro", "integro", "bruto"])
+                # Ampliamos palabras clave por si Hacienda lo llama "rendimiento" en vez de íntegro
+                col_bruto = encontrar_columna(["íntegro", "integro", "bruto", "rendimiento", "importe"])
                 col_penal = encontrar_columna(["penalización", "penalizacion"])
                 col_ret = encontrar_columna(["retencion", "retención", "retenciones"])
                 col_gastos = encontrar_columna(["gastos", "deducibles"])
-                col_rol = encontrar_columna(["declarante"]) # Para la primera columna "T", "C", etc.
+                col_rol = encontrar_columna(["declarante"])
 
                 # 2️⃣ DESCARGAMOS TU DICCIONARIO DE EMPRESAS DESDE SUPABASE
                 try:
@@ -1836,7 +1857,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     res_empresas = supabase.table("Empresas").select("ISIN, NombreING, NombreHacienda").execute()
                     lista_empresas = res_empresas.data if res_empresas.data else []
                     
-                    # Creamos 3 diccionarios para que busque por todas las vías posibles
                     map_isin = {str(e["ISIN"]).strip().upper(): e["NombreING"] for e in lista_empresas if e.get("ISIN")}
                     map_hac = {str(e["NombreHacienda"]).strip().upper(): e["NombreING"] for e in lista_empresas if e.get("NombreHacienda")}
                     map_ing = {str(e["NombreING"]).strip().upper(): e["NombreING"] for e in lista_empresas if e.get("NombreING")}
@@ -1851,36 +1871,30 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     registros_aeat = []
                     
                     for _, row in df_aeat.iterrows():
-                        # ESCUDO ANTI-CABECERAS: Si la fila no tiene importes, la saltamos
                         val_bruto = euro_a_numero(row.get(col_bruto, 0)) if col_bruto else 0.0
                         val_ret = euro_a_numero(row.get(col_ret, 0)) if col_ret else 0.0
                         
                         if val_bruto == 0 and val_ret == 0: 
                             continue 
                             
-                        # Valores crudos de Hacienda
                         raw_codigo = str(row.get(col_codigo, "")).strip() if col_codigo else ""
                         raw_emisor = str(row.get(col_nom_emi, "")).strip() if col_nom_emi else ""
                         
-                        # ESCUDO EXTRA ANTI-CABECERAS: Por si la fila 1 se cuela como dato
                         if raw_emisor.lower() in ["emisor", "nombre emisor", "nombre del emisor"]:
                             continue
                             
                         # -------------------------------------------------------------
-                        # 🕵️ TRADUCTOR MÁGICO DE EMPRESAS (Comparación Directa)
+                        # 🕵️ TRADUCTOR MÁGICO DE EMPRESAS
                         # -------------------------------------------------------------
                         codigo_upper = raw_codigo.upper()
                         emisor_upper = raw_emisor.upper()
                         
-                        nombre_traducido = raw_emisor # Por defecto dejamos el original de Hacienda
+                        nombre_traducido = raw_emisor 
                         
-                        # Intento 1: ¿Coincide directamente con el NombreHacienda? (Ej: "CODIGO: US6092071058")
                         if emisor_upper in map_hac: nombre_traducido = map_hac[emisor_upper]
                         elif codigo_upper in map_hac: nombre_traducido = map_hac[codigo_upper]
-                        # Intento 2: ¿Coincide con el ISIN puro?
                         elif emisor_upper in map_isin: nombre_traducido = map_isin[emisor_upper]
                         elif codigo_upper in map_isin: nombre_traducido = map_isin[codigo_upper]
-                        # Intento 3: Coincidencia parcial con el nombre de ING
                         else:
                             for n_ing in map_ing.keys():
                                 if n_ing in emisor_upper or n_ing in codigo_upper:
@@ -1888,14 +1902,13 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                                     break
                         # -------------------------------------------------------------
 
-                        # Construimos el diccionario exactamente con tu schema SQL
                         registro = {
                             "rol_declarante": str(row.get(col_rol, "")).strip()[:50] if col_rol else "",
                             "nif_declarante": str(row.get(col_nif_dec, "")).strip()[:50] if col_nif_dec else "",
                             "nombre_declarante": str(row.get(col_nom_dec, "")).strip()[:250] if col_nom_dec else "",
                             "codigo_emisor": raw_codigo[:100],
                             "nif_emisor": str(row.get(col_nif_emi, "")).strip()[:50] if col_nif_emi else "",
-                            "nombre_emisor": nombre_traducido[:250], # 🎯 ¡Nombre limpio!
+                            "nombre_emisor": nombre_traducido[:250], 
                             "clave": str(row.get(col_clave, "")).strip()[:50] if col_clave else "",
                             "tipo": str(row.get(col_tipo, "")).strip()[:50] if col_tipo else "",
                             "importe_integro": round(val_bruto, 2),
@@ -1910,12 +1923,8 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     if registros_aeat:
                         with st.spinner("Borrando datos antiguos y subiendo los nuevos..."):
                             try:
-                                # 1️⃣ Borramos todo lo de ese año fiscal
                                 supabase.table("informefiscalaeat").delete().eq("ejercicio_fiscal", int(ejercicio_fiscal_aeat)).execute()
-                                
-                                # 2️⃣ Insertamos todo limpio
                                 supabase.table("informefiscalaeat").insert(registros_aeat).execute()
-                                
                                 st.success(f"✅ ¡{len(registros_aeat)} operaciones guardadas con éxito en tu base de datos para el año {ejercicio_fiscal_aeat}!")
                                 st.balloons()
                             except Exception as e:
@@ -1924,4 +1933,3 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                         st.warning("No se encontraron registros válidos para subir (revisa que el Excel tenga importes).")
             except Exception as e:
                 st.error(f"❌ Error procesando el archivo: {e}")
-
