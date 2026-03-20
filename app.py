@@ -1993,7 +1993,7 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 col_ret = encontrar_columna(["retencion", "retención", "retenciones"])
                 col_gastos = encontrar_columna(["gastos", "deducibles"])
 
-                # 2️⃣ DESCARGAMOS TU DICCIONARIO DE EMPRESAS (BLINDADO ANTI-VACÍOS)
+                # 2️⃣ DESCARGAMOS TU DICCIONARIO DE EMPRESAS
                 try:
                     from supabase import create_client, Client
                     supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
@@ -2027,13 +2027,9 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     map_isin, map_hac, map_ing, map_name_to_isin, isins_en_db = {}, {}, {}, {}, set()
 
                 # -------------------------------------------------------------
-                # 🚨 DICCIONARIO DE CASOS ESPECIALES
+                # 🚨 DICCIONARIO DE CASOS ESPECIALES (Desactivado para la traducción)
                 # -------------------------------------------------------------
-                map_scrip_dividends = {
-                    "ES06670509O8": "ES0167050915", # ACS
-                    "ES06670509P5": "ES0167050915", # ACS
-                    "ES06445809S7": "ES0144580Y14"  # Iberdrola
-                }
+                map_scrip_dividends = {}
                 
                 map_nombres_rebeldes = {
                     "BANCO DE SABADELL, S.A.": "ES0113860A34",
@@ -2112,6 +2108,17 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 empresas_sin_isin = set()
                 isins_no_registrados = set()
                 
+                # CHIVATO INTELIGENTE DE DERECHOS PARA EL AVISO
+                info_derechos_warning = {
+                    "ES06670509O8": " ➡️ *Derechos de ACS*",
+                    "ES06670509P5": " ➡️ *Derechos de ACS*",
+                    "ES06670509Q3": " ➡️ *Derechos de ACS*",
+                    "ES06670509R1": " ➡️ *Derechos de ACS*",
+                    "ES06445809S7": " ➡️ *Derechos de Iberdrola*",
+                    "ES06445809U3": " ➡️ *Derechos de Iberdrola*",
+                    "FR001400UH43": " ➡️ *Acciones de Lealtad de L'Oréal*"
+                }
+                
                 for _, row in df_aeat.iterrows():
                     isin_val = str(row.get("ISIN_Detectado", "")).strip()
                     nom_val = str(row.get("Empresa_Traducida", "")).strip()
@@ -2123,7 +2130,13 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     if not isin_val:
                         empresas_sin_isin.add(nom_val if nom_val else raw_nom)
                     elif isin_val not in isins_en_db:
-                        isins_no_registrados.add(f"{nom_val} (ISIN: {isin_val})")
+                        # Buscamos si es un derecho conocido
+                        etiqueta_extra = info_derechos_warning.get(isin_val, "")
+                        # Regla general para otros derechos en España
+                        if not etiqueta_extra and isin_val.startswith("ES06"):
+                            etiqueta_extra = " ➡️ *Posibles derechos de acción matriz*"
+                            
+                        isins_no_registrados.add(f"{nom_val} (ISIN: {isin_val}){etiqueta_extra}")
 
                 if empresas_sin_isin or isins_no_registrados:
                     st.warning("⚠️ **ATENCIÓN: Tienes tareas pendientes en tu Gestor de Empresas**")
@@ -2135,7 +2148,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                             
                     if isins_no_registrados:
                         st.markdown("**2️⃣ ISINs detectados en el Excel, pero que NO están guardados en tu base de datos:**")
-                        # 🎯 CORRECCIÓN APLICADA AQUÍ ABAJO ("in" en lugar de "en")
                         for isin_f in sorted(list(isins_no_registrados)):
                             st.write(f"- 🔍 {isin_f}")
                             
