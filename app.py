@@ -1804,8 +1804,9 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
 
                 df_aeat = df_aeat.fillna("")
                 
+                # 🎯 Quitamos el .head() para que veas todas las filas
                 st.write("📊 **Vista previa de los datos brutos:**")
-                st.dataframe(df_aeat.head())
+                st.dataframe(df_aeat)
 
                 # Buscador inteligente de columnas
                 cols = df_aeat.columns.tolist()
@@ -1825,6 +1826,7 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 col_penal = encontrar_columna(["penalización", "penalizacion"])
                 col_ret = encontrar_columna(["retencion", "retención", "retenciones"])
                 col_gastos = encontrar_columna(["gastos", "deducibles"])
+                col_rol = encontrar_columna(["declarante"]) # Para la primera columna "T", "C", etc.
 
                 # 2️⃣ DESCARGAMOS TU DICCIONARIO DE EMPRESAS DESDE SUPABASE
                 try:
@@ -1865,12 +1867,12 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                             continue
                             
                         # -------------------------------------------------------------
-                        # 🕵️ TRADUCTOR MÁGICO DE EMPRESAS (Simplificado y Directo)
+                        # 🕵️ TRADUCTOR MÁGICO DE EMPRESAS (Comparación Directa)
                         # -------------------------------------------------------------
                         codigo_upper = raw_codigo.upper()
                         emisor_upper = raw_emisor.upper()
                         
-                        nombre_traducido = raw_emisor # Por defecto dejamos el feo de Hacienda
+                        nombre_traducido = raw_emisor # Por defecto dejamos el original de Hacienda
                         
                         # Intento 1: ¿Coincide directamente con el NombreHacienda? (Ej: "CODIGO: US6092071058")
                         if emisor_upper in map_hac: nombre_traducido = map_hac[emisor_upper]
@@ -1888,11 +1890,12 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
 
                         # Construimos el diccionario exactamente con tu schema SQL
                         registro = {
-                            "codigo": raw_codigo[:100],
-                            "nif_emisor": str(row.get(col_nif_emi, "")).strip()[:50] if col_nif_emi else "",
-                            "nombre_emisor": nombre_traducido[:250], # 🎯 ¡AQUÍ METEMOS EL NOMBRE LIMPIO!
+                            "rol_declarante": str(row.get(col_rol, "")).strip()[:50] if col_rol else "",
                             "nif_declarante": str(row.get(col_nif_dec, "")).strip()[:50] if col_nif_dec else "",
                             "nombre_declarante": str(row.get(col_nom_dec, "")).strip()[:250] if col_nom_dec else "",
+                            "codigo_emisor": raw_codigo[:100],
+                            "nif_emisor": str(row.get(col_nif_emi, "")).strip()[:50] if col_nif_emi else "",
+                            "nombre_emisor": nombre_traducido[:250], # 🎯 ¡Nombre limpio!
                             "clave": str(row.get(col_clave, "")).strip()[:50] if col_clave else "",
                             "tipo": str(row.get(col_tipo, "")).strip()[:50] if col_tipo else "",
                             "importe_integro": round(val_bruto, 2),
@@ -1921,10 +1924,4 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                         st.warning("No se encontraron registros válidos para subir (revisa que el Excel tenga importes).")
             except Exception as e:
                 st.error(f"❌ Error procesando el archivo: {e}")
-
-
-
-
-
-
 
