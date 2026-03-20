@@ -1791,7 +1791,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
     st.write("Sube el archivo Excel o CSV de tus datos fiscales descargado de Hacienda. El sistema lo leerá, traducirá los nombres de las empresas y lo guardará en tu base de datos.")
 
     from datetime import datetime
-    # 📅 Calculamos automáticamente el año fiscal (Año actual - 1)
     anio_fiscal_defecto = datetime.now().year - 1
 
     ejercicio_fiscal_aeat = st.number_input(
@@ -1869,24 +1868,25 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     map_isin, map_hac, map_ing = {}, {}, {}
 
 
-                st.info("💡 **Filtro Anti-Duplicados Activado:** El sistema ignorará inteligentemente cualquier dato que ya esté guardado en tu base de datos.")
+                st.info("💡 **Filtro Anti-Duplicados Inteligente Activado:** El sistema cotejará Código + NIF + Importe. Permitirá subir dividendos idénticos si vienen varios en tu Excel, pero bloqueará si intentas resubir el mismo archivo entero.")
 
                 if st.button("☁️ Subir a Base de Datos (informefiscalaeat)", type="primary"):
                     with st.spinner("Comprobando duplicados y preparando la subida..."):
                         try:
                             # 3️⃣ TRAEMOS LO QUE YA EXISTE PARA CREAR LA "HUELLA DIGITAL"
-                            res_db = supabase.table("informefiscalaeat").select("nif_emisor, nombre_emisor, importe_integro").eq("ejercicio_fiscal", int(ejercicio_fiscal_aeat)).execute()
+                            res_db = supabase.table("informefiscalaeat").select("codigo_emisor, nif_emisor, nombre_emisor, importe_integro").eq("ejercicio_fiscal", int(ejercicio_fiscal_aeat)).execute()
                             
-                            db_existentes = set()
+                            db_existentes = [] # AHORA ES UNA LISTA (Para llevar la cuenta exacta)
                             if res_db.data:
                                 for row_db in res_db.data:
+                                    cod_db = str(row_db.get("codigo_emisor", "")).strip() # 🎯 CÓDIGO AÑADIDO A LA HUELLA
                                     nif_db = str(row_db.get("nif_emisor", "")).strip()
                                     nom_db = str(row_db.get("nombre_emisor", "")).strip()
                                     identificador = nif_db if nif_db else nom_db 
                                     imp_db = round(float(row_db.get("importe_integro", 0)), 2)
                                     
-                                    firma = f"{identificador}_{imp_db}"
-                                    db_existentes.add(firma)
+                                    firma = f"{cod_db}_{identificador}_{imp_db}"
+                                    db_existentes.append(firma) # Lo metemos en la lista
 
                             registros_aeat = []
                             
@@ -1923,10 +1923,15 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                                 identificador_excel = nif_emi_excel if nif_emi_excel else nombre_traducido[:250]
                                 importe_excel = round(val_bruto, 2)
                                 
-                                firma_actual = f"{identificador_excel}_{importe_excel}"
+                                # 🎯 HUELLA DIGITAL ACTUALIZADA CON EL CÓDIGO
+                                firma_actual = f"{raw_codigo[:100]}_{identificador_excel}_{importe_excel}"
 
-                                # 🛡️ SOLO AÑADIMOS SI LA FIRMA NO EXISTE EN LA BASE DE DATOS
-                                if firma_actual not in db_existentes:
+                                # 🛡️ CONTROL DE DUPLICADOS EXACTO
+                                if firma_actual in db_existentes:
+                                    # Si ya existe en DB, lo "tachamos" de la lista para permitir futuros duplicados legítimos
+                                    db_existentes.remove(firma_actual)
+                                else:
+                                    # Es un dato 100% nuevo o un dividendo repetido que aún no estaba en DB
                                     registro = {
                                         "nif_declarante": str(row.get(col_nif_dec, "")).strip()[:50] if col_nif_dec else "",
                                         "nombre_declarante": str(row.get(col_nom_dec, "")).strip()[:250] if col_nom_dec else "",
@@ -1942,8 +1947,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                                         "ejercicio_fiscal": int(ejercicio_fiscal_aeat)
                                     }
                                     registros_aeat.append(registro)
-                                    
-                                    db_existentes.add(firma_actual)
                             
                             if registros_aeat:
                                 supabase.table("informefiscalaeat").insert(registros_aeat).execute()
@@ -1956,3 +1959,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                             st.error(f"❌ Error al comunicar con Supabase: {e}")
             except Exception as e:
                 st.error(f"❌ Error procesando el archivo: {e}")
+
+
+
