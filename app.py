@@ -1721,217 +1721,6 @@ elif opcion == "💸 Asistente de Renta Web":
 # ==========================================
 elif opcion == "⚖️ Auditoría Pro (DB)":
     st.title("⚖️ Auditoría Pro (Base de Datos)")
-    st.write("Cruza los datos directamente desde Supabase, dividendo a dividendo (1 a 1). El sistema prioriza el ISIN oficial de Hacienda, usa tu tabla de Empresas como respaldo inteligente y empareja operaciones idénticas marcándolas para no duplicarlas.")
-
-    from datetime import datetime
-    anio_fiscal_defecto = datetime.now().year - 1
-
-    ejercicio_auditar = st.number_input(
-        "📅 ¿Qué Año Fiscal quieres auditar?", 
-        min_value=2020, 
-        max_value=2050, 
-        value=anio_fiscal_defecto
-    )
-
-    st.markdown("---")
-
-    if st.button("🔍 Iniciar Auditoría Pro (1 a 1)", type="primary", use_container_width=True):
-        with st.spinner(f"Descargando y emparejando dividendos 1 a 1 del año {ejercicio_auditar}..."):
-            try:
-                from supabase import create_client, Client
-                supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-
-                # 1️⃣ DESCARGAMOS EL DICCIONARIO DE EMPRESAS PARA EL ISIN
-                res_empresas = supabase.table("Empresas").select("ISIN, NombreING, NombreHacienda").execute()
-                map_hac_to_isin = {}
-                map_ing_to_isin = {}
-                
-                if res_empresas.data:
-                    for e in res_empresas.data:
-                        isin_oficial = str(e.get("ISIN", "")).strip().upper()
-                        # 🛡️ Escudo Anti-Vacíos: Solo guardamos si hay un ISIN real
-                        if isin_oficial:
-                            nom_hac = str(e.get("NombreHacienda", "")).strip().upper()
-                            nom_ing = str(e.get("NombreING", "")).strip().upper()
-                            
-                            if nom_hac: map_hac_to_isin[nom_hac] = isin_oficial
-                            if nom_ing: map_ing_to_isin[nom_ing] = isin_oficial
-
-                # 2️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA
-                res_ing = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
-                res_aeat = supabase.table("informefiscalaeat").select("id, codigo_emisor, nombre_emisor, importe_integro, retenciones").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
-
-                if not res_ing.data and not res_aeat.data:
-                    st.warning(f"🤷‍♂️ No hay datos guardados en ninguna de las dos tablas para el año {ejercicio_auditar}.")
-                else:
-                    # 3️⃣ PREPARAR LISTA DE ING
-                    ing_list = []
-                    if res_ing.data:
-                        for row in res_ing.data:
-                            ing_list.append({
-                                "id": row["id"],
-                                "isin": str(row.get("isin", "")).strip().upper(),
-                                "empresa": row.get("empresa", ""),
-                                "bruto": round(float(row.get("importe_bruto", 0)), 2),
-                                "ret": round(float(row.get("retencion_destino", 0)), 2),
-                                "comprobado": False  
-                            })
-
-                    # 4️⃣ PREPARAR LISTA DE HACIENDA (EL CEREBRO MEJORADO Y FLEXIBLE)
-                    aeat_list = []
-                    if res_aeat.data:
-                        import re # Expresiones regulares para detectar ISINs
-                        for row in res_aeat.data:
-                            nom = str(row.get("nombre_emisor", "")).strip().upper()
-                            cod = str(row.get("codigo_emisor", "")).strip().upper()
-                            cod_limpio = cod.replace("CODIGO:", "").strip()
-                            
-                            isin_resuelto = ""
-                            
-                            # 🎯 Prioridad Absoluta 1: ¿Hacienda ya nos ha dado el ISIN perfecto en el código? (Ej: FR0000121014)
-                            if re.match(r"^[A-Z]{2}[A-Z0-9]{10}$", cod_limpio):
-                                isin_resuelto = cod_limpio
-                            else:
-                                # 🎯 Prioridad 2: Buscar en la base de datos (con escudo anti-vacíos y mucha flexibilidad)
-                                if nom and nom in map_hac_to_isin: isin_resuelto = map_hac_to_isin[nom]
-                                elif cod and cod in map_hac_to_isin: isin_resuelto = map_hac_to_isin[cod]
-                                elif cod_limpio and cod_limpio in map_hac_to_isin: isin_resuelto = map_hac_to_isin[cod_limpio]
-                                elif nom and nom in map_ing_to_isin: isin_resuelto = map_ing_to_isin[nom]
-                                elif cod and cod in map_ing_to_isin: isin_resuelto = map_ing_to_isin[cod]
-                                elif cod_limpio and cod_limpio in map_ing_to_isin: isin_resuelto = map_ing_to_isin[cod_limpio]
-                                else: isin_resuelto = cod_limpio # Plan B final
-                            
-                            aeat_list.append({
-                                "id": row["id"],
-                                "isin": isin_resuelto,
-                                "empresa": row.get("nombre_emisor", ""),
-                                "bruto": round(float(row.get("importe_integro", 0)), 2),
-                                "ret": round(float(row.get("retenciones", 0)), 2),
-                                "comprobado": False 
-                            })
-
-                    # 5️⃣ ALGORITMO DE EMPAREJAMIENTO (CARA A CARA 1 a 1)
-                    resultados = []
-
-                    # A. Buscamos pareja para los de ING
-                    for div_ing in ing_list:
-                        if div_ing["comprobado"]: continue
-                        
-                        mejor_pareja = None
-                        for div_aeat in aeat_list:
-                            # Tienen que compartir ISIN (y no estar vacío) y tener el mismo importe (+- 2 céntimos)
-                            if not div_aeat["comprobado"]:
-                                if div_ing["isin"] and div_aeat["isin"] == div_ing["isin"] and abs(div_aeat["bruto"] - div_ing["bruto"]) <= 0.02:
-                                    mejor_pareja = div_aeat
-                                    break 
-                        
-                        if mejor_pareja:
-                            # MARCADOS COMO COMPROBADOS PARA NO REPETIRSE
-                            div_ing["comprobado"] = True
-                            mejor_pareja["comprobado"] = True
-                            
-                            dif_b = div_ing["bruto"] - mejor_pareja["bruto"]
-                            dif_r = div_ing["ret"] - mejor_pareja["ret"]
-                            estado = "✅ Ok" if abs(dif_r) <= 0.05 else "⚠️ Descuadre Ret."
-                            
-                            resultados.append({
-                                "Estado": estado,
-                                "ISIN": div_ing["isin"],
-                                "Empresa": div_ing["empresa"] if div_ing["empresa"] else mejor_pareja["empresa"],
-                                "Bruto_ING": div_ing["bruto"],
-                                "Bruto_AEAT": mejor_pareja["bruto"],
-                                "Dif_Bruto": dif_b,
-                                "Ret_ING": div_ing["ret"],
-                                "Ret_AEAT": mejor_pareja["ret"],
-                                "Dif_Ret": dif_r
-                            })
-                        else:
-                            # Huérfano de ING
-                            resultados.append({
-                                "Estado": "❌ Falta en AEAT",
-                                "ISIN": div_ing["isin"],
-                                "Empresa": div_ing["empresa"],
-                                "Bruto_ING": div_ing["bruto"],
-                                "Bruto_AEAT": 0.0,
-                                "Dif_Bruto": div_ing["bruto"],
-                                "Ret_ING": div_ing["ret"],
-                                "Ret_AEAT": 0.0,
-                                "Dif_Ret": div_ing["ret"]
-                            })
-
-                    # B. Miramos los huérfanos de Hacienda
-                    for div_aeat in aeat_list:
-                        if not div_aeat["comprobado"]:
-                            resultados.append({
-                                "Estado": "❌ Falta en ING",
-                                "ISIN": div_aeat["isin"],
-                                "Empresa": div_aeat["empresa"],
-                                "Bruto_ING": 0.0,
-                                "Bruto_AEAT": div_aeat["bruto"],
-                                "Dif_Bruto": -div_aeat["bruto"],
-                                "Ret_ING": 0.0,
-                                "Ret_AEAT": div_aeat["ret"],
-                                "Dif_Ret": -div_aeat["ret"]
-                            })
-
-                    # 6️⃣ RENDERIZADO VISUAL
-                    df_cruce = pd.DataFrame(resultados)
-                    df_cruce = df_cruce.sort_values(by=["Estado", "Empresa"], ascending=[False, True])
-
-                    st.subheader("🎯 Resumen del Cruce Fiscal 1 a 1")
-                    
-                    tot_bruto_ing = df_cruce["Bruto_ING"].sum()
-                    tot_bruto_aeat = df_cruce["Bruto_AEAT"].sum()
-                    dif_global_bruto = tot_bruto_ing - tot_bruto_aeat
-
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Bruto Total (ING)", f"{tot_bruto_ing:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
-                    col2.metric("Bruto Total (AEAT)", f"{tot_bruto_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
-                    
-                    color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
-                    col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
-
-                    st.markdown("### 🔍 Detalle Dividendo a Dividendo")
-                    
-                    # Estilos para ver en rojo los descuadres
-                    df_mostrar = df_cruce.style.format({
-                        "Bruto_ING": "{:.2f} €", "Bruto_AEAT": "{:.2f} €", "Dif_Bruto": "{:.2f} €",
-                        "Ret_ING": "{:.2f} €", "Ret_AEAT": "{:.2f} €", "Dif_Ret": "{:.2f} €"
-                    }).applymap(
-                        lambda x: f"color: {'#ff4b4b' if abs(x) > 0.10 else '#21c354'}", 
-                        subset=["Dif_Bruto", "Dif_Ret"]
-                    )
-                    
-                    st.dataframe(df_mostrar, use_container_width=True, height=600)
-
-                    # Botón de Descarga
-                    csv_cruce = df_cruce.to_csv(index=False, sep=";").encode('utf-8-sig')
-                    st.download_button(
-                        label="⬇️ Descargar Auditoría (CSV)", 
-                        data=csv_cruce, 
-                        file_name=f"Auditoria_Pro_1a1_{ejercicio_auditar}.csv", 
-                        mime='text/csv'
-                    )
-
-            except Exception as e:
-                st.error(f"❌ Error interno al realizar la auditoría: {e}")
-
-
-
-
-
-
-
-
-
-
-# ==========================================
-# 🚀 APLICACIÓN 10: EXTRACTOR INFORME FISCAL AEAT
-# ==========================================
-# 🚀 APLICACIÓN: AUDITORÍA PRO (DB)
-# ==========================================
-elif opcion == "⚖️ Auditoría Pro (DB)":
-    st.title("⚖️ Auditoría Pro (Base de Datos)")
     st.write("Cruza los datos directamente desde Supabase, dividendo a dividendo (1 a 1).")
 
     from datetime import datetime
@@ -2079,6 +1868,324 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
 
+
+
+
+
+
+
+
+
+
+# ==========================================
+# 🚀 APLICACIÓN 10: EXTRACTOR INFORME FISCAL AEAT
+# ==========================================
+elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
+    st.title("🏛️ Extractor Total del Informe Fiscal AEAT")
+    st.write("Sube el archivo Excel o CSV de tus datos fiscales descargado de Hacienda. El sistema lo leerá, traducirá los nombres de las empresas, obtendrá su ISIN y lo guardará en tu base de datos.")
+
+    from datetime import datetime
+    import re
+    
+    anio_fiscal_defecto = datetime.now().year - 1
+
+    ejercicio_fiscal_aeat = st.number_input(
+        "📅 ¿De qué Año Fiscal son estos datos?", 
+        min_value=2020, 
+        max_value=2050, 
+        value=anio_fiscal_defecto
+    )
+    
+    archivo_aeat = st.file_uploader("Sube el Excel/CSV de Hacienda", type=["csv", "xlsx", "xls"], key="inf_aeat_solo")
+
+    if archivo_aeat:
+        with st.spinner("Analizando formato de Hacienda, cazando ISINs y conectando con tu Base de Datos..."):
+            try:
+                # 1️⃣ LECTURA DEL ARCHIVO
+                if archivo_aeat.name.endswith('.csv'):
+                    df_aeat = pd.read_csv(archivo_aeat, sep=None, engine='python')
+                else:
+                    df_aeat = pd.read_excel(archivo_aeat)
+
+                df_aeat = df_aeat.fillna("")
+
+                # -------------------------------------------------------------
+                # 🕵️‍♂️ CAZADOR DE CABECERAS
+                # -------------------------------------------------------------
+                cols_actuales = " ".join([str(c).lower() for c in df_aeat.columns])
+                if "emisor" not in cols_actuales and "declarante" not in cols_actuales:
+                    header_idx = -1
+                    for idx, row in df_aeat.head(15).iterrows():
+                        fila_texto = " ".join([str(val).lower() for val in row.values])
+                        if "emisor" in fila_texto and ("integro" in fila_texto.replace("í", "i") or "retencion" in fila_texto.replace("ó", "o")):
+                            header_idx = idx
+                            break
+                    
+                    if header_idx != -1:
+                        df_aeat.columns = [str(c).strip() for c in df_aeat.iloc[header_idx]]
+                        df_aeat = df_aeat.iloc[header_idx + 1:].reset_index(drop=True)
+                
+                cols = df_aeat.columns.tolist()
+                def encontrar_columna(claves):
+                    for col in cols:
+                        if any(c.lower() in col.lower() for c in claves): return col
+                    return None
+
+                col_codigo = encontrar_columna(["emisor", "código", "codigo"])
+                col_nif_emi = encontrar_columna(["nif emisor", "nif del emisor"])
+                col_nom_emi = encontrar_columna(["nombre emisor", "nombre del emisor"])
+                col_nif_dec = encontrar_columna(["nif declarante", "nif del declarante"])
+                col_nom_dec = encontrar_columna(["nombre declarante", "apellidos", "razón social declarante", "razon social"])
+                col_clave = encontrar_columna(["clave"])
+                col_tipo = encontrar_columna(["tipo"])
+                col_bruto = encontrar_columna(["íntegro", "integro", "bruto", "rendimiento", "importe"])
+                col_penal = encontrar_columna(["penalización", "penalizacion"])
+                col_ret = encontrar_columna(["retencion", "retención", "retenciones"])
+                col_gastos = encontrar_columna(["gastos", "deducibles"])
+
+                # 2️⃣ DESCARGAMOS TU DICCIONARIO DE EMPRESAS (AMPLIADO A 5000 Y LIMPIO)
+                try:
+                    from supabase import create_client, Client
+                    supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+                    
+                    # 🚀 Aumento del límite de descarga a 5000 para evitar que Supabase esconda datos
+                    res_empresas = supabase.table("Empresas").select("ISIN, NombreING, NombreHacienda").limit(5000).execute()
+                    lista_empresas = res_empresas.data if res_empresas.data else []
+                    
+                    map_isin = {}
+                    map_hac = {}
+                    map_ing = {}
+                    map_name_to_isin = {}
+                    isins_en_db = set()
+                    
+                    for e in lista_empresas:
+                        # 🚀 Limpieza extrema anti espacios invisibles
+                        isin_val = str(e.get("ISIN", "")).replace('\xa0', '').strip().upper()
+                        nom_ing = str(e.get("NombreING", "")).replace('\xa0', '').strip().upper()
+                        nom_hac = str(e.get("NombreHacienda", "")).replace('\xa0', '').strip().upper()
+                        
+                        if isin_val:
+                            isins_en_db.add(isin_val)
+                            if nom_ing and isin_val not in map_isin: 
+                                map_isin[isin_val] = nom_ing
+                        if nom_hac and nom_ing: map_hac[nom_hac] = nom_ing
+                        if nom_ing: map_ing[nom_ing] = nom_ing
+                        
+                        if isin_val:
+                            if nom_hac: map_name_to_isin[nom_hac] = isin_val
+                            if nom_ing: map_name_to_isin[nom_ing] = isin_val
+
+                except Exception as e:
+                    st.warning(f"⚠️ No se pudo cargar la tabla de Empresas: {e}")
+                    map_isin, map_hac, map_ing, map_name_to_isin, isins_en_db = {}, {}, {}, {}, set()
+
+                # -------------------------------------------------------------
+                # 🚨 DICCIONARIO DE CASOS ESPECIALES
+                # -------------------------------------------------------------
+                map_scrip_dividends = {}
+                map_nombres_rebeldes = {
+                    "BANCO DE SABADELL, S.A.": "ES0113860A34",
+                    "BANCO SABADELL": "ES0113860A34"
+                }
+
+                # 3️⃣ ENRIQUECEMOS EL DATAFRAME
+                def enriquecer_fila(row):
+                    raw_codigo = str(row.get(col_codigo, "")).replace('\xa0', '').strip() if col_codigo else ""
+                    raw_emisor = str(row.get(col_nom_emi, "")).replace('\xa0', '').strip() if col_nom_emi else ""
+                    
+                    if raw_emisor.lower() in ["emisor", "nombre emisor", "nombre del emisor"]:
+                        return pd.Series(["", ""]) 
+
+                    codigo_upper = raw_codigo.upper()
+                    emisor_upper = raw_emisor.upper()
+                    
+                    def limpiar_ruido(texto):
+                        t = texto
+                        ruidos = [", S.A.", " S.A.", " S.A", ", S.L.", " S.L.", " S.L", " INC.", " INC", " CORP.", " CORP", " PLC", " N.V.", ","]
+                        for r in ruidos:
+                            t = t.replace(r, "")
+                        t = t.replace("BANCO DE ", "BANCO ")
+                        return t.strip()
+                        
+                    emisor_limpio = limpiar_ruido(emisor_upper)
+
+                    # A. TRADUCTOR DE NOMBRE INICIAL
+                    nombre_traducido = raw_emisor 
+                    if emisor_upper in map_hac: 
+                        nombre_traducido = map_hac[emisor_upper]
+                    elif emisor_limpio in map_hac: 
+                        nombre_traducido = map_hac[emisor_limpio]
+                    else:
+                        for n_ing in sorted(map_ing.keys(), key=len, reverse=True):
+                            # Reducimos a >=3 letras para que detecte cosas cortas como "ACS"
+                            if n_ing and len(n_ing) >= 3 and (n_ing in emisor_upper or n_ing in emisor_limpio):
+                                nombre_traducido = map_ing[n_ing]
+                                break
+
+                    # B. 🎯 CAZADOR DE ISIN
+                    isin_encontrado = ""
+                    
+                    if emisor_upper in map_nombres_rebeldes:
+                        isin_encontrado = map_nombres_rebeldes[emisor_upper]
+                    else:
+                        texto_combinado = f"{codigo_upper} {emisor_upper}"
+                        match_isin = re.search(r"([A-Z]{2}[A-Z0-9]{10})", texto_combinado)
+                        
+                        if match_isin:
+                            isin_encontrado = match_isin.group(1)
+                            if isin_encontrado in map_scrip_dividends:
+                                isin_encontrado = map_scrip_dividends[isin_encontrado]
+                        else:
+                            if emisor_upper in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_upper]
+                            elif emisor_limpio in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_limpio]
+                            elif nombre_traducido.upper() in map_name_to_isin: isin_encontrado = map_name_to_isin[nombre_traducido.upper()]
+                            else:
+                                for n_db in sorted(map_name_to_isin.keys(), key=len, reverse=True):
+                                    if n_db and len(n_db) >= 3 and (n_db in emisor_upper or n_db in emisor_limpio):
+                                        isin_encontrado = map_name_to_isin[n_db]
+                                        break
+                    
+                    # C. REGLA DE ORO: EL ISIN ES EL REY
+                    if isin_encontrado and isin_encontrado in map_isin:
+                        nombre_traducido = map_isin[isin_encontrado]
+
+                    return pd.Series([isin_encontrado, nombre_traducido])
+
+                df_aeat[["ISIN_Detectado", "Empresa_Traducida"]] = df_aeat.apply(enriquecer_fila, axis=1)
+
+                cols_order = ["ISIN_Detectado", "Empresa_Traducida"] + [c for c in df_aeat.columns if c not in ["ISIN_Detectado", "Empresa_Traducida"]]
+                df_aeat = df_aeat[cols_order]
+
+                st.write("📊 **Vista previa de los datos enriquecidos (Listos para subir):**")
+                st.dataframe(df_aeat)
+
+                # -------------------------------------------------------------
+                # 🚨 ESCÁNER DE COHERENCIA CONTRA LA TABLA "EMPRESAS"
+                # -------------------------------------------------------------
+                empresas_sin_isin = set()
+                isins_no_registrados = set()
+                
+                info_derechos_warning = {
+                    "ES06670509O8": " ➡️ *Derechos de ACS*",
+                    "ES06670509P5": " ➡️ *Derechos de ACS*",
+                    "ES06670509Q3": " ➡️ *Derechos de ACS*",
+                    "ES06670509R1": " ➡️ *Derechos de ACS*",
+                    "ES06445809S7": " ➡️ *Derechos de Iberdrola*",
+                    "ES06445809U3": " ➡️ *Derechos de Iberdrola*",
+                    "FR001400UH43": " ➡️ *Acciones de Lealtad de L'Oréal*"
+                }
+                
+                for _, row in df_aeat.iterrows():
+                    isin_val = str(row.get("ISIN_Detectado", "")).strip()
+                    nom_val = str(row.get("Empresa_Traducida", "")).strip()
+                    raw_nom = str(row.get(col_nom_emi, "")).strip()
+                    
+                    if raw_nom.lower() in ["emisor", "nombre emisor", "nombre del emisor"] or (row.get(col_bruto, "") == "" and row.get(col_ret, "") == ""):
+                        continue 
+
+                    if not isin_val:
+                        empresas_sin_isin.add(nom_val if nom_val else raw_nom)
+                    elif isin_val not in isins_en_db:
+                        etiqueta_extra = info_derechos_warning.get(isin_val, "")
+                        if not etiqueta_extra and isin_val.startswith("ES06"):
+                            etiqueta_extra = " ➡️ *Posibles derechos de acción matriz*"
+                            
+                        isins_no_registrados.add(f"{nom_val} (ISIN: {isin_val}){etiqueta_extra}")
+
+                if empresas_sin_isin or isins_no_registrados:
+                    st.warning("⚠️ **ATENCIÓN: Tienes tareas pendientes en tu Gestor de Empresas**")
+                    
+                    if empresas_sin_isin:
+                        st.markdown("**1️⃣ Empresas sin ISIN (Añádelas en el Gestor de Empresas):**")
+                        for emp in sorted(list(empresas_sin_isin)):
+                            st.write(f"- ❌ {emp}")
+                            
+                    if isins_no_registrados:
+                        st.markdown("**2️⃣ ISINs detectados en el Excel, pero que NO están guardados en tu base de datos:**")
+                        for isin_f in sorted(list(isins_no_registrados)):
+                            st.write(f"- 🔍 {isin_f}")
+                            
+                    st.info("💡 **Consejo:** Añade estas empresas en la pestaña '🏢 Gestor de Empresas (DB)' antes de auditar, para que el cruce sea 100% perfecto.")
+                else:
+                    st.success("✅ ¡Matrícula de Honor! Todos los ISINs del Excel están perfectamente registrados en tu base de datos.")
+
+                st.markdown("---")
+
+                # -------------------------------------------------------------
+                st.info("💡 **Filtro Anti-Duplicados Inteligente Activado:** El sistema cotejará Código + NIF + Importe.")
+
+                if st.button("☁️ Subir a Base de Datos (informefiscalaeat)", type="primary"):
+                    with st.spinner("Comprobando duplicados y subiendo a la nube..."):
+                        try:
+                            res_db = supabase.table("informefiscalaeat").select("codigo_emisor, nif_emisor, nombre_emisor, importe_integro").eq("ejercicio_fiscal", int(ejercicio_fiscal_aeat)).execute()
+                            
+                            db_existentes = [] 
+                            if res_db.data:
+                                for row_db in res_db.data:
+                                    cod_db = str(row_db.get("codigo_emisor", "")).strip() 
+                                    nif_db = str(row_db.get("nif_emisor", "")).strip()
+                                    nom_db = str(row_db.get("nombre_emisor", "")).strip()
+                                    identificador = nif_db if nif_db else nom_db 
+                                    imp_db = round(float(row_db.get("importe_integro", 0)), 2)
+                                    
+                                    firma = f"{cod_db}_{identificador}_{imp_db}"
+                                    db_existentes.append(firma) 
+
+                            registros_aeat = []
+                            
+                            for _, row in df_aeat.iterrows():
+                                val_bruto = euro_a_numero(row.get(col_bruto, 0)) if col_bruto else 0.0
+                                val_ret = euro_a_numero(row.get(col_ret, 0)) if col_ret else 0.0
+                                
+                                if val_bruto == 0 and val_ret == 0: 
+                                    continue 
+                                    
+                                raw_codigo = str(row.get(col_codigo, "")).strip() if col_codigo else ""
+                                raw_emisor = str(row.get(col_nom_emi, "")).strip() if col_nom_emi else ""
+                                
+                                if raw_emisor.lower() in ["emisor", "nombre emisor", "nombre del emisor"]:
+                                    continue
+                                
+                                nombre_traducido = str(row.get("Empresa_Traducida", raw_emisor)).strip()
+                                isin_encontrado = str(row.get("ISIN_Detectado", "")).strip()
+
+                                nif_emi_excel = str(row.get(col_nif_emi, "")).strip()[:50] if col_nif_emi else ""
+                                identificador_excel = nif_emi_excel if nif_emi_excel else nombre_traducido[:250]
+                                importe_excel = round(val_bruto, 2)
+                                
+                                firma_actual = f"{raw_codigo[:100]}_{identificador_excel}_{importe_excel}"
+
+                                if firma_actual in db_existentes:
+                                    db_existentes.remove(firma_actual)
+                                else:
+                                    registro = {
+                                        "nif_declarante": str(row.get(col_nif_dec, "")).strip()[:50] if col_nif_dec else "",
+                                        "nombre_declarante": str(row.get(col_nom_dec, "")).strip()[:250] if col_nom_dec else "",
+                                        "codigo_emisor": raw_codigo[:100],
+                                        "nif_emisor": nif_emi_excel,
+                                        "nombre_emisor": nombre_traducido[:250], 
+                                        "clave": str(row.get(col_clave, "")).strip()[:50] if col_clave else "",
+                                        "tipo": str(row.get(col_tipo, "")).strip()[:50] if col_tipo else "",
+                                        "importe_integro": importe_excel,
+                                        "penalizacion": round(euro_a_numero(row.get(col_penal, 0)), 2) if col_penal else 0.0,
+                                        "retenciones": round(val_ret, 2),
+                                        "gastos_deducibles": round(euro_a_numero(row.get(col_gastos, 0)), 2) if col_gastos else 0.0,
+                                        "ejercicio_fiscal": int(ejercicio_fiscal_aeat),
+                                        "isin": isin_encontrado[:50] 
+                                    }
+                                    registros_aeat.append(registro)
+                            
+                            if registros_aeat:
+                                supabase.table("informefiscalaeat").insert(registros_aeat).execute()
+                                st.success(f"✅ ¡{len(registros_aeat)} operaciones NUEVAS guardadas con éxito para el año {ejercicio_fiscal_aeat}!")
+                                st.balloons()
+                            else:
+                                st.info("ℹ️ No se ha subido nada. Todos los datos de este Excel ya estaban en tu base de datos (0 duplicados).")
+                                
+                        except Exception as e:
+                            st.error(f"❌ Error al comunicar con Supabase: {e}")
+            except Exception as e:
+                st.error(f"❌ Error procesando el archivo: {e}")
 
 
 
