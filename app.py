@@ -1932,7 +1932,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 # ==========================================
 elif opcion == "⚖️ Auditoría Pro (DB)":
     st.title("⚖️ Auditoría Pro (Base de Datos)")
-    st.write("Cruza los datos directamente desde Supabase, dividendo a dividendo (1 a 1). El sistema usa la columna ISIN oficial y empareja de forma inteligente los distintos códigos de los Scrip Dividends analizando la raíz del ISIN.")
+    st.write("Cruza los datos directamente desde Supabase, dividendo a dividendo (1 a 1). El sistema usa la columna ISIN oficial y empareja de forma inteligente los distintos códigos de los Scrip Dividends analizando su raíz.")
 
     from datetime import datetime
     anio_fiscal_defecto = datetime.now().year - 1
@@ -1952,42 +1952,30 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                 from supabase import create_client, Client
                 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-                # 1️⃣ DESCARGAMOS EL "ADN" DE LAS EMPRESAS ESPAÑOLAS
-                res_empresas = supabase.table("Empresas").select("ISIN").limit(5000).execute()
-                map_raices_es01 = {}
-                
-                if res_empresas.data:
-                    for row in res_empresas.data:
-                        isin_db = str(row.get("ISIN", "")).strip().upper()
-                        # Si es una acción española normal (ES01), le extraemos su raíz de 5 dígitos (posiciones 4 a 8)
-                        if isin_db.startswith("ES01") and len(isin_db) >= 9:
-                            raiz = isin_db[4:9]
-                            map_raices_es01[raiz] = isin_db
-
-                # Excepciones extranjeras que no comparten raíz
+                # Excepciones extranjeras que no comparten raíz (Ej: Bonus de Lealtad)
                 excepciones_manuales = {
-                    "FR001400UH43": "FR0000120321"  # L'Oréal Bonus Lealtad
+                    "FR001400UH43": "FR0000120321"  # L'Oréal
                 }
 
-                # Función inteligente para traducir derechos al ISIN matriz
+                # 🧠 EL TRUCO DEFINITIVO PARA LOS DERECHOS ESPAÑOLES
                 def traducir_isin_comp(isin_orig):
                     if isin_orig in excepciones_manuales:
                         return excepciones_manuales[isin_orig]
-                    # Si es un derecho español (ES06), buscamos su ADN en nuestra base de datos
+                    # Si es un derecho español (ES06), podamos los últimos 3 caracteres
+                    # ES06670509P5 -> ES0667050
+                    # ES06670509O8 -> ES0667050
                     if isin_orig.startswith("ES06") and len(isin_orig) >= 9:
-                        raiz = isin_orig[4:9]
-                        if raiz in map_raices_es01:
-                            return map_raices_es01[raiz] # Devolvemos el ES01 matriz
+                        return isin_orig[:9] # Devolvemos solo la raíz pura
                     return isin_orig
 
-                # 2️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA 
+                # 1️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA 
                 res_ing = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
                 res_aeat = supabase.table("informefiscalaeat").select("id, isin, codigo_emisor, nombre_emisor, importe_integro, retenciones").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
 
                 if not res_ing.data and not res_aeat.data:
                     st.warning(f"🤷‍♂️ No hay datos guardados en ninguna de las dos tablas para el año {ejercicio_auditar}.")
                 else:
-                    # 3️⃣ PREPARAR LISTA DE ING
+                    # 2️⃣ PREPARAR LISTA DE ING
                     ing_list = []
                     if res_ing.data:
                         for row in res_ing.data:
@@ -2004,7 +1992,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "comprobado": False  
                             })
 
-                    # 4️⃣ PREPARAR LISTA DE HACIENDA
+                    # 3️⃣ PREPARAR LISTA DE HACIENDA
                     aeat_list = []
                     if res_aeat.data:
                         for row in res_aeat.data:
@@ -2021,7 +2009,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "comprobado": False 
                             })
 
-                    # 5️⃣ ALGORITMO DE EMPAREJAMIENTO (CARA A CARA 1 a 1)
+                    # 4️⃣ ALGORITMO DE EMPAREJAMIENTO (CARA A CARA 1 a 1)
                     resultados = []
 
                     # A. Buscamos pareja para los de ING
@@ -2030,7 +2018,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                         
                         mejor_pareja = None
                         for div_aeat in aeat_list:
-                            # 🎯 LA MAGIA: Comparamos usando el isin_comp (el ADN), no el visual
+                            # 🎯 LA MAGIA: Comparamos usando la raíz (isin_comp), no el visual
                             if not div_aeat["comprobado"]:
                                 if div_ing["isin_comp"] and div_aeat["isin_comp"] == div_ing["isin_comp"] and abs(div_aeat["bruto"] - div_ing["bruto"]) <= 0.02:
                                     mejor_pareja = div_aeat
@@ -2087,7 +2075,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Dif_Ret": -div_aeat["ret"]
                             })
 
-                    # 6️⃣ RENDERIZADO VISUAL
+                    # 5️⃣ RENDERIZADO VISUAL
                     import pandas as pd
                     df_cruce = pd.DataFrame(resultados)
                     df_cruce = df_cruce.sort_values(by=["Estado", "Empresa"], ascending=[False, True])
