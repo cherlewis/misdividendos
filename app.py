@@ -1993,12 +1993,13 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 col_ret = encontrar_columna(["retencion", "retención", "retenciones"])
                 col_gastos = encontrar_columna(["gastos", "deducibles"])
 
-                # 2️⃣ DESCARGAMOS TU DICCIONARIO DE EMPRESAS
+                # 2️⃣ DESCARGAMOS TU DICCIONARIO DE EMPRESAS (AMPLIADO A 5000 Y LIMPIO)
                 try:
                     from supabase import create_client, Client
                     supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
                     
-                    res_empresas = supabase.table("Empresas").select("ISIN, NombreING, NombreHacienda").execute()
+                    # 🚀 Aumento del límite de descarga a 5000 para evitar que Supabase esconda datos
+                    res_empresas = supabase.table("Empresas").select("ISIN, NombreING, NombreHacienda").limit(5000).execute()
                     lista_empresas = res_empresas.data if res_empresas.data else []
                     
                     map_isin = {}
@@ -2008,9 +2009,10 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     isins_en_db = set()
                     
                     for e in lista_empresas:
-                        isin_val = str(e.get("ISIN", "")).strip().upper()
-                        nom_ing = str(e.get("NombreING", "")).strip().upper()
-                        nom_hac = str(e.get("NombreHacienda", "")).strip().upper()
+                        # 🚀 Limpieza extrema anti espacios invisibles
+                        isin_val = str(e.get("ISIN", "")).replace('\xa0', '').strip().upper()
+                        nom_ing = str(e.get("NombreING", "")).replace('\xa0', '').strip().upper()
+                        nom_hac = str(e.get("NombreHacienda", "")).replace('\xa0', '').strip().upper()
                         
                         if isin_val:
                             isins_en_db.add(isin_val)
@@ -2038,8 +2040,8 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
 
                 # 3️⃣ ENRIQUECEMOS EL DATAFRAME
                 def enriquecer_fila(row):
-                    raw_codigo = str(row.get(col_codigo, "")).strip() if col_codigo else ""
-                    raw_emisor = str(row.get(col_nom_emi, "")).strip() if col_nom_emi else ""
+                    raw_codigo = str(row.get(col_codigo, "")).replace('\xa0', '').strip() if col_codigo else ""
+                    raw_emisor = str(row.get(col_nom_emi, "")).replace('\xa0', '').strip() if col_nom_emi else ""
                     
                     if raw_emisor.lower() in ["emisor", "nombre emisor", "nombre del emisor"]:
                         return pd.Series(["", ""]) 
@@ -2057,7 +2059,7 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                         
                     emisor_limpio = limpiar_ruido(emisor_upper)
 
-                    # A. TRADUCTOR DE NOMBRE INICIAL (Búsqueda difusa)
+                    # A. TRADUCTOR DE NOMBRE INICIAL
                     nombre_traducido = raw_emisor 
                     if emisor_upper in map_hac: 
                         nombre_traducido = map_hac[emisor_upper]
@@ -2065,7 +2067,8 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                         nombre_traducido = map_hac[emisor_limpio]
                     else:
                         for n_ing in sorted(map_ing.keys(), key=len, reverse=True):
-                            if n_ing and len(n_ing) >= 4 and (n_ing in emisor_upper or n_ing in emisor_limpio):
+                            # Reducimos a >=3 letras para que detecte cosas cortas como "ACS"
+                            if n_ing and len(n_ing) >= 3 and (n_ing in emisor_upper or n_ing in emisor_limpio):
                                 nombre_traducido = map_ing[n_ing]
                                 break
 
@@ -2088,13 +2091,11 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                             elif nombre_traducido.upper() in map_name_to_isin: isin_encontrado = map_name_to_isin[nombre_traducido.upper()]
                             else:
                                 for n_db in sorted(map_name_to_isin.keys(), key=len, reverse=True):
-                                    if n_db and len(n_db) >= 4 and (n_db in emisor_upper or n_db in emisor_limpio):
+                                    if n_db and len(n_db) >= 3 and (n_db in emisor_upper or n_db in emisor_limpio):
                                         isin_encontrado = map_name_to_isin[n_db]
                                         break
                     
-                    # 👑 C. REGLA DE ORO: EL ISIN ES EL REY
-                    # Si hemos cazado un ISIN y lo tienes en tu DB, forzamos su nombre oficial, 
-                    # ignorando cualquier coincidencia difusa previa.
+                    # C. REGLA DE ORO: EL ISIN ES EL REY
                     if isin_encontrado and isin_encontrado in map_isin:
                         nombre_traducido = map_isin[isin_encontrado]
 
