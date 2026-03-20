@@ -1928,6 +1928,8 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 # ==========================================
 # 🚀 APLICACIÓN 10: EXTRACTOR INFORME FISCAL AEAT
 # ==========================================
+# 🚀 APLICACIÓN: EXTRACTOR INFORME FISCAL AEAT
+# ==========================================
 elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
     st.title("🏛️ Extractor Total del Informe Fiscal AEAT")
     st.write("Sube el archivo Excel o CSV de tus datos fiscales descargado de Hacienda. El sistema lo leerá, traducirá los nombres de las empresas, obtendrá su ISIN y lo guardará en tu base de datos.")
@@ -1947,7 +1949,7 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
     archivo_aeat = st.file_uploader("Sube el Excel/CSV de Hacienda", type=["csv", "xlsx", "xls"], key="inf_aeat_solo")
 
     if archivo_aeat:
-        with st.spinner("Analizando formato de Hacienda, cazando ISINs rebeldes y conectando con tu Base de Datos..."):
+        with st.spinner("Analizando formato de Hacienda, cazando ISINs y conectando con tu Base de Datos..."):
             try:
                 # 1️⃣ LECTURA DEL ARCHIVO
                 if archivo_aeat.name.endswith('.csv'):
@@ -1973,7 +1975,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                         df_aeat.columns = [str(c).strip() for c in df_aeat.iloc[header_idx]]
                         df_aeat = df_aeat.iloc[header_idx + 1:].reset_index(drop=True)
                 
-                # Buscador inteligente de columnas
                 cols = df_aeat.columns.tolist()
                 def encontrar_columna(claves):
                     for col in cols:
@@ -1992,7 +1993,7 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 col_ret = encontrar_columna(["retencion", "retención", "retenciones"])
                 col_gastos = encontrar_columna(["gastos", "deducibles"])
 
-                # 2️⃣ DESCARGAMOS TU DICCIONARIO DE EMPRESAS DESDE SUPABASE
+                # 2️⃣ DESCARGAMOS TU DICCIONARIO DE EMPRESAS (BLINDADO ANTI-VACÍOS)
                 try:
                     from supabase import create_client, Client
                     supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
@@ -2000,31 +2001,44 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     res_empresas = supabase.table("Empresas").select("ISIN, NombreING, NombreHacienda").execute()
                     lista_empresas = res_empresas.data if res_empresas.data else []
                     
-                    map_isin = {str(e["ISIN"]).strip().upper(): e["NombreING"] for e in lista_empresas if e.get("ISIN")}
-                    map_hac = {str(e["NombreHacienda"]).strip().upper(): e["NombreING"] for e in lista_empresas if e.get("NombreHacienda")}
-                    map_ing = {str(e["NombreING"]).strip().upper(): e["NombreING"] for e in lista_empresas if e.get("NombreING")}
-
+                    map_isin = {}
+                    map_hac = {}
+                    map_ing = {}
                     map_name_to_isin = {}
+                    
                     for e in lista_empresas:
                         isin_val = str(e.get("ISIN", "")).strip().upper()
+                        nom_ing = str(e.get("NombreING", "")).strip().upper()
+                        nom_hac = str(e.get("NombreHacienda", "")).strip().upper()
+                        
+                        if isin_val and nom_ing: map_isin[isin_val] = nom_ing
+                        if nom_hac and nom_ing: map_hac[nom_hac] = nom_ing
+                        if nom_ing: map_ing[nom_ing] = nom_ing
+                        
+                        # Guardamos para el buscador de ISIN solo si los nombres son reales (no vacíos)
                         if isin_val:
-                            if e.get("NombreHacienda"): map_name_to_isin[str(e["NombreHacienda"]).strip().upper()] = isin_val
-                            if e.get("NombreING"): map_name_to_isin[str(e["NombreING"]).strip().upper()] = isin_val
+                            if nom_hac: map_name_to_isin[nom_hac] = isin_val
+                            if nom_ing: map_name_to_isin[nom_ing] = isin_val
 
                 except Exception as e:
                     st.warning(f"⚠️ No se pudo cargar la tabla de Empresas: {e}")
                     map_isin, map_hac, map_ing, map_name_to_isin = {}, {}, {}, {}
 
                 # -------------------------------------------------------------
-                # 🚨 DICCIONARIO DE SCRIP DIVIDENDS (DERECHOS TEMPORALES)
+                # 🚨 DICCIONARIO DE CASOS ESPECIALES
                 # -------------------------------------------------------------
                 map_scrip_dividends = {
                     "ES06670509O8": "ES0167050915", # ACS
                     "ES06670509P5": "ES0167050915", # ACS
                     "ES06445809S7": "ES0144580Y14"  # Iberdrola
                 }
+                
+                map_nombres_rebeldes = {
+                    "BANCO DE SABADELL, S.A.": "ES0113860A34",
+                    "BANCO SABADELL": "ES0113860A34"
+                }
 
-                # 3️⃣ ENRIQUECEMOS EL DATAFRAME (MAGIA EN VIVO PARA LA VISTA PREVIA)
+                # 3️⃣ ENRIQUECEMOS EL DATAFRAME
                 def enriquecer_fila(row):
                     raw_codigo = str(row.get(col_codigo, "")).strip() if col_codigo else ""
                     raw_emisor = str(row.get(col_nom_emi, "")).strip() if col_nom_emi else ""
@@ -2035,7 +2049,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     codigo_upper = raw_codigo.upper()
                     emisor_upper = raw_emisor.upper()
                     
-                    # 🧹 LIMPIADOR DE RUIDO CORPORATIVO (Arranca comas y S.A. para Sabadell)
                     def limpiar_ruido(texto):
                         t = texto
                         ruidos = [", S.A.", " S.A.", " S.A", ", S.L.", " S.L.", " S.L", " INC.", " INC", " CORP.", " CORP", " PLC", " N.V.", ","]
@@ -2053,44 +2066,41 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     elif emisor_upper in map_isin: nombre_traducido = map_isin[emisor_upper]
                     else:
                         for n_ing in map_ing.keys():
-                            if n_ing in emisor_upper or n_ing in emisor_limpio:
+                            if n_ing and (n_ing in emisor_upper or n_ing in emisor_limpio):
                                 nombre_traducido = map_ing[n_ing]
                                 break
 
-                    # B. 🎯 CAZADOR DE ISIN (El Francotirador Ampliado)
+                    # B. 🎯 CAZADOR DE ISIN
                     isin_encontrado = ""
                     
-                    # UNIMOS CÓDIGO Y NOMBRE PARA ESCANEAR LOS DOS SITIOS A LA VEZ
-                    texto_combinado = f"{codigo_upper} {emisor_upper}"
-                    
-                    match_isin = re.search(r"([A-Z]{2}[A-Z0-9]{10})", texto_combinado)
-                    
-                    if match_isin:
-                        isin_encontrado = match_isin.group(1)
-                        # Transformamos los ISIN falsos de Scrip Dividend en los ISIN reales
-                        if isin_encontrado in map_scrip_dividends:
-                            isin_encontrado = map_scrip_dividends[isin_encontrado]
+                    if emisor_upper in map_nombres_rebeldes:
+                        isin_encontrado = map_nombres_rebeldes[emisor_upper]
                     else:
-                        # Si la regex no caza nada, tiramos del nombre limpio contra la base de datos
-                        if emisor_upper in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_upper]
-                        elif emisor_limpio in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_limpio]
-                        elif nombre_traducido.upper() in map_name_to_isin: isin_encontrado = map_name_to_isin[nombre_traducido.upper()]
+                        texto_combinado = f"{codigo_upper} {emisor_upper}"
+                        match_isin = re.search(r"([A-Z]{2}[A-Z0-9]{10})", texto_combinado)
+                        
+                        if match_isin:
+                            isin_encontrado = match_isin.group(1)
+                            if isin_encontrado in map_scrip_dividends:
+                                isin_encontrado = map_scrip_dividends[isin_encontrado]
                         else:
-                            for n_db, i_db in map_name_to_isin.items():
-                                if n_db in emisor_upper or n_db in emisor_limpio:
-                                    isin_encontrado = i_db
-                                    break
+                            if emisor_upper in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_upper]
+                            elif emisor_limpio in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_limpio]
+                            elif nombre_traducido.upper() in map_name_to_isin: isin_encontrado = map_name_to_isin[nombre_traducido.upper()]
+                            else:
+                                # 🛡️ EL FILTRO ANTI-TEXTO VACÍO
+                                for n_db, i_db in map_name_to_isin.items():
+                                    if n_db and (n_db in emisor_upper or n_db in emisor_limpio):
+                                        isin_encontrado = i_db
+                                        break
                     
-                    # Si el nombre traducido sigue siendo el feo, pero tenemos el ISIN real, lo traducimos al nombre oficial
                     if isin_encontrado in map_isin and nombre_traducido == raw_emisor:
                         nombre_traducido = map_isin[isin_encontrado]
 
                     return pd.Series([isin_encontrado, nombre_traducido])
 
-                # Aplicamos la función y creamos las dos columnas nuevas
                 df_aeat[["ISIN_Detectado", "Empresa_Traducida"]] = df_aeat.apply(enriquecer_fila, axis=1)
 
-                # Reordenamos las columnas
                 cols_order = ["ISIN_Detectado", "Empresa_Traducida"] + [c for c in df_aeat.columns if c not in ["ISIN_Detectado", "Empresa_Traducida"]]
                 df_aeat = df_aeat[cols_order]
 
@@ -2098,13 +2108,11 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 st.dataframe(df_aeat)
 
                 # -------------------------------------------------------------
-
                 st.info("💡 **Filtro Anti-Duplicados Inteligente Activado:** El sistema cotejará Código + NIF + Importe.")
 
                 if st.button("☁️ Subir a Base de Datos (informefiscalaeat)", type="primary"):
                     with st.spinner("Comprobando duplicados y subiendo a la nube..."):
                         try:
-                            # 4️⃣ TRAEMOS LO QUE YA EXISTE PARA CREAR LA "HUELLA DIGITAL"
                             res_db = supabase.table("informefiscalaeat").select("codigo_emisor, nif_emisor, nombre_emisor, importe_integro").eq("ejercicio_fiscal", int(ejercicio_fiscal_aeat)).execute()
                             
                             db_existentes = [] 
@@ -2134,18 +2142,15 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                                 if raw_emisor.lower() in ["emisor", "nombre emisor", "nombre del emisor"]:
                                     continue
                                 
-                                # Rescatamos los valores perfectos de la vista previa
                                 nombre_traducido = str(row.get("Empresa_Traducida", raw_emisor)).strip()
                                 isin_encontrado = str(row.get("ISIN_Detectado", "")).strip()
 
-                                # Extraemos los valores para la Huella Digital del Excel
                                 nif_emi_excel = str(row.get(col_nif_emi, "")).strip()[:50] if col_nif_emi else ""
                                 identificador_excel = nif_emi_excel if nif_emi_excel else nombre_traducido[:250]
                                 importe_excel = round(val_bruto, 2)
                                 
                                 firma_actual = f"{raw_codigo[:100]}_{identificador_excel}_{importe_excel}"
 
-                                # 🛡️ CONTROL DE DUPLICADOS EXACTO
                                 if firma_actual in db_existentes:
                                     db_existentes.remove(firma_actual)
                                 else:
@@ -2177,12 +2182,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                             st.error(f"❌ Error al comunicar con Supabase: {e}")
             except Exception as e:
                 st.error(f"❌ Error procesando el archivo: {e}")
-
-
-
-
-
-
 
 
 
