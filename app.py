@@ -793,10 +793,11 @@ elif opcion == "🗂️ Renombrador de PDFs":
 
 
 
+
 # ==========================================
 # 🚀 APLICACIÓN 4: EXTRACTOR INFORME FISCAL ING
 # ==========================================
-elif opcion == "📄 Extractor Informe Fiscal (ING)":
+elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
     st.title("📄 Extractor Total del Informe Fiscal ING")
     st.write("Sube el PDF de Información Fiscal de ING. Extraeremos DRIPs, Dividendos y los enviaremos a tu base de datos.")
 
@@ -958,7 +959,7 @@ elif opcion == "📄 Extractor Informe Fiscal (ING)":
                         from supabase import create_client, Client
                         supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
                         
-                        # 1️⃣ Traer existentes para HUELLA DIGITAL (¡Ahora compara como entero!)
+                        # 1️⃣ Traer existentes para HUELLA DIGITAL (compara como entero)
                         res_db = supabase.table("informefiscaling").select("isin, importe_bruto").eq("ejercicio_fiscal", int(ejercicio_fiscal_ing)).execute()
                         
                         db_existentes = []
@@ -1011,6 +1012,8 @@ elif opcion == "📄 Extractor Informe Fiscal (ING)":
                             
                     except Exception as e:
                         st.error(f"❌ Error al guardar en DB: {e}")
+
+
 
 
 
