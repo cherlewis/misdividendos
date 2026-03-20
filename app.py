@@ -814,30 +814,43 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
     
     archivos_pdf_inf = st.file_uploader("Sube tu PDF de Datos Fiscales de ING aquí", type=["pdf"], accept_multiple_files=True, key="inf_ing")
 
-    # -------------------------------------------------------------
-    # 🇫🇷 FUNCIÓN DE PAÍSES ACTUALIZADA (¡Con L'Oréal y empresas francesas!)
-    # -------------------------------------------------------------
+    # Función para asignar banderas/países
     def obtener_bandera(isin, empresa):
-        # 1. Por ISIN (Método más seguro)
         if isinstance(isin, str) and len(isin) >= 2 and isin != "ISIN no encontrado":
             prefijo = isin[:2].upper()
             banderas = {"ES": "España", "US": "USA", "DE": "Alemania", "FR": "Francia", "NL": "Países Bajos", "GB": "Reino Unido"}
             if prefijo in banderas: return banderas[prefijo]
-            
-        # 2. Por Nombre / Sufijo (Si falla el ISIN)
-        empresa_upper = str(empresa).upper()
-        if " INC" in empresa_upper or " CORP" in empresa_upper: return "USA"
-        if " NV" in empresa_upper: return "Países Bajos"
-        if " PLC" in empresa_upper: return "Reino Unido"
-        if "L'OREAL" in empresa_upper or "LOREAL" in empresa_upper: return "Francia"
-        if "LVMH" in empresa_upper or "LOUIS VUITTON" in empresa_upper: return "Francia"
-        if "DANONE" in empresa_upper or "SANOFI" in empresa_upper: return "Francia"
-        
+        if " INC" in str(empresa).upper() or " CORP" in str(empresa).upper(): return "USA"
+        if " NV" in str(empresa).upper(): return "Países Bajos"
+        if " PLC" in str(empresa).upper(): return "Reino Unido"
+        if "L'OREAL" in str(empresa).upper() or "LOREAL" in str(empresa).upper(): return "Francia"
+        if "LVMH" in str(empresa).upper() or "LOUIS VUITTON" in str(empresa).upper(): return "Francia"
+        if "DANONE" in str(empresa).upper() or "SANOFI" in str(empresa).upper(): return "Francia"
         return "Desconocido"
 
     if archivos_pdf_inf:
         datos_informe = []
-        with st.spinner("Analizando Informe Fiscal de ING..."):
+        with st.spinner("Analizando Informe Fiscal de ING y cruzando con tu base de datos..."):
+            
+            # -------------------------------------------------------------
+            # 🕵️‍♂️ DICCIONARIO DE ISIN DE EMERGENCIA (Buscamos en la DB)
+            # -------------------------------------------------------------
+            map_empresa_isin = {}
+            try:
+                from supabase import create_client, Client
+                supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+                res_empresas = supabase.table("Empresas").select("ISIN, NombreING").execute()
+                
+                if res_empresas.data:
+                    for e in res_empresas.data:
+                        if e.get("NombreING") and e.get("ISIN"):
+                            map_empresa_isin[str(e["NombreING"]).strip().upper()] = str(e["ISIN"]).strip()
+            except Exception as e:
+                st.warning(f"⚠️ No se pudo cargar la tabla de Empresas para buscar ISINs: {e}")
+
+            # -------------------------------------------------------------
+            # LECTURA DEL PDF
+            # -------------------------------------------------------------
             for archivo in archivos_pdf_inf:
                 try:
                     import pdfplumber
@@ -850,7 +863,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                         
                         if texto_completo:
                             lineas = texto_completo.split('\n')
-                            # Patrones de búsqueda adaptados a ING
                             patron_drip = r"(.*?)\s+(Nacional|Internacional)\s+(\d{2}/\d{2}/\d{4})\s+STOCK DIVIDEND\s+(\d+)\s+([\d.,]+)\s*€"
                             patron_div = r"(.*?)\s+(Nacional|Internacional)\s+DIVIDENDO\s+([\d,.]+)\s*€\s+([\d,.]+)\s*€(?:\s+([\d,.]+)\s*€)?"
                             
@@ -871,6 +883,17 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                             isin_encontrado = match_isin.group(1)
                                             break
                                             
+                                    # 🆘 SALVAVIDAS ISIN PARA DRIPS
+                                    if not isin_encontrado:
+                                        emp_up = empresa_full.upper()
+                                        if emp_up in map_empresa_isin:
+                                            isin_encontrado = map_empresa_isin[emp_up]
+                                        else:
+                                            for n_ing, isin_val in map_empresa_isin.items():
+                                                if n_ing in emp_up or emp_up in n_ing:
+                                                    isin_encontrado = isin_val
+                                                    break
+
                                     bruto_num = euro_a_numero(importe)
 
                                     datos_informe.append({
@@ -920,6 +943,17 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                                     isin_encontrado = match_isin_next.group(1)
                                                     break
 
+                                    # 🆘 SALVAVIDAS ISIN PARA DIVIDENDOS
+                                    if not isin_encontrado:
+                                        emp_up = empresa_full.upper()
+                                        if emp_up in map_empresa_isin:
+                                            isin_encontrado = map_empresa_isin[emp_up]
+                                        else:
+                                            for n_ing, isin_val in map_empresa_isin.items():
+                                                if n_ing in emp_up or emp_up in n_ing:
+                                                    isin_encontrado = isin_val
+                                                    break
+
                                     # MATEMÁTICAS AVANZADAS
                                     bruto_num = euro_a_numero(bruto)
                                     ret_ori_num = euro_a_numero(ret_origen)
@@ -947,7 +981,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                         "porcentaje_retencion_destino": pct_des,
                                         "importe_bruto": round(bruto_num, 2),
                                         "empresa": empresa_full,
-                                        "pais": obtener_bandera(isin_encontrado, empresa_full),
+                                        "pais": obtener_bandera(isin_encontrado, empresa_full), # AHORA TIENE EL ISIN CORRECTO
                                         "cuenta_valores": "",
                                         "numero_titulos": 0.0, 
                                         "cuenta_abono": "",
@@ -979,9 +1013,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                 if st.button("☁️ Subir a Base de Datos (informefiscaling)", type="primary", use_container_width=True):
                     with st.spinner("Comprobando duplicados y guardando en Supabase..."):
                         try:
-                            from supabase import create_client, Client
-                            supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-                            
+                            # Ya tenemos el cliente creado arriba, lo reusamos
                             res_db = supabase.table("informefiscaling").select("isin, importe_bruto").eq("ejercicio_fiscal", int(ejercicio_fiscal_ing)).execute()
                             
                             db_existentes = []
@@ -1031,7 +1063,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                 
                         except Exception as e:
                             st.error(f"❌ Error al guardar en DB: {e}")
-
 
 
 
