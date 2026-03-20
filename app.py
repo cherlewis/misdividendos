@@ -1947,7 +1947,7 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
     archivo_aeat = st.file_uploader("Sube el Excel/CSV de Hacienda", type=["csv", "xlsx", "xls"], key="inf_aeat_solo")
 
     if archivo_aeat:
-        with st.spinner("Analizando formato de Hacienda, buscando ISINs y conectando con tu Base de Datos..."):
+        with st.spinner("Analizando formato de Hacienda, cazando ISINs rebeldes y conectando con tu Base de Datos..."):
             try:
                 # 1️⃣ LECTURA DEL ARCHIVO
                 if archivo_aeat.name.endswith('.csv'):
@@ -1958,7 +1958,7 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 df_aeat = df_aeat.fillna("")
 
                 # -------------------------------------------------------------
-                # 🕵️‍♂️ CAZADOR DE CABECERAS (Para evitar el texto basura de Hacienda)
+                # 🕵️‍♂️ CAZADOR DE CABECERAS
                 # -------------------------------------------------------------
                 cols_actuales = " ".join([str(c).lower() for c in df_aeat.columns])
                 if "emisor" not in cols_actuales and "declarante" not in cols_actuales:
@@ -2024,33 +2024,46 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                         return pd.Series(["", ""]) 
 
                     codigo_upper = raw_codigo.upper()
-                    cod_limpio = codigo_upper.replace("CODIGO:", "").strip()
                     emisor_upper = raw_emisor.upper()
                     
+                    # 🧹 LIMPIADOR DE RUIDO CORPORATIVO (Para arreglar el caso "Sabadell")
+                    def limpiar_ruido(texto):
+                        t = texto
+                        ruidos = [", S.A.", " S.A.", " S.A", ", S.L.", " S.L.", " S.L", " INC.", " INC", " CORP.", " CORP", " PLC", " N.V."]
+                        for r in ruidos:
+                            t = t.replace(r, "")
+                        t = t.replace("BANCO DE ", "BANCO ")
+                        return t.strip()
+                        
+                    emisor_limpio = limpiar_ruido(emisor_upper)
+
                     # A. Traductor de Nombre
                     nombre_traducido = raw_emisor 
                     if emisor_upper in map_hac: nombre_traducido = map_hac[emisor_upper]
-                    elif cod_limpio in map_hac: nombre_traducido = map_hac[cod_limpio]
-                    elif codigo_upper in map_hac: nombre_traducido = map_hac[codigo_upper]
+                    elif emisor_limpio in map_hac: nombre_traducido = map_hac[emisor_limpio]
                     elif emisor_upper in map_isin: nombre_traducido = map_isin[emisor_upper]
-                    elif cod_limpio in map_isin: nombre_traducido = map_isin[cod_limpio]
                     else:
                         for n_ing in map_ing.keys():
-                            if n_ing in emisor_upper or n_ing in cod_limpio:
+                            if n_ing in emisor_upper or n_ing in emisor_limpio:
                                 nombre_traducido = map_ing[n_ing]
                                 break
 
-                    # B. Cazador de ISIN
+                    # B. 🎯 CAZADOR DE ISIN (El Francotirador Regex)
                     isin_encontrado = ""
-                    if re.match(r"^[A-Z]{2}[A-Z0-9]{10}$", cod_limpio):
-                        isin_encontrado = cod_limpio
+                    # Busca cualquier bloque de 2 letras y 10 alfanuméricos en CUALQUIER lugar de la celda
+                    match_isin = re.search(r"([A-Z]{2}[A-Z0-9]{10})", codigo_upper)
+                    
+                    if match_isin:
+                        isin_encontrado = match_isin.group(1) # Extrae el ISIN puro sin importar la basura de alrededor
                     else:
+                        # Si no hay ISIN camuflado, buscamos en el diccionario con el nombre limpio
                         if emisor_upper in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_upper]
-                        elif cod_limpio in map_name_to_isin: isin_encontrado = map_name_to_isin[cod_limpio]
+                        elif emisor_limpio in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_limpio]
                         elif nombre_traducido.upper() in map_name_to_isin: isin_encontrado = map_name_to_isin[nombre_traducido.upper()]
                         else:
+                            # Búsqueda difusa definitiva
                             for n_db, i_db in map_name_to_isin.items():
-                                if n_db in emisor_upper or n_db in cod_limpio:
+                                if n_db in emisor_upper or n_db in emisor_limpio:
                                     isin_encontrado = i_db
                                     break
                     
@@ -2059,7 +2072,7 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 # Aplicamos la función y creamos las dos columnas nuevas
                 df_aeat[["ISIN_Detectado", "Empresa_Traducida"]] = df_aeat.apply(enriquecer_fila, axis=1)
 
-                # Reordenamos las columnas para que el ISIN y el Nombre Traducido salgan las primeras a la izquierda
+                # Reordenamos las columnas
                 cols_order = ["ISIN_Detectado", "Empresa_Traducida"] + [c for c in df_aeat.columns if c not in ["ISIN_Detectado", "Empresa_Traducida"]]
                 df_aeat = df_aeat[cols_order]
 
@@ -2103,7 +2116,7 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                                 if raw_emisor.lower() in ["emisor", "nombre emisor", "nombre del emisor"]:
                                     continue
                                 
-                                # Rescatamos los valores que ya hemos calculado arriba para la vista previa
+                                # Rescatamos los valores perfectos de la vista previa
                                 nombre_traducido = str(row.get("Empresa_Traducida", raw_emisor)).strip()
                                 isin_encontrado = str(row.get("ISIN_Detectado", "")).strip()
 
@@ -2146,6 +2159,10 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                             st.error(f"❌ Error al comunicar con Supabase: {e}")
             except Exception as e:
                 st.error(f"❌ Error procesando el archivo: {e}")
+
+
+
+
 
 
 
