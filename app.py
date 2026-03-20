@@ -1947,7 +1947,7 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
     archivo_aeat = st.file_uploader("Sube el Excel/CSV de Hacienda", type=["csv", "xlsx", "xls"], key="inf_aeat_solo")
 
     if archivo_aeat:
-        with st.spinner("Analizando formato de Hacienda y conectando con tu Base de Datos..."):
+        with st.spinner("Analizando formato de Hacienda, buscando ISINs y conectando con tu Base de Datos..."):
             try:
                 # 1️⃣ LECTURA DEL ARCHIVO
                 if archivo_aeat.name.endswith('.csv'):
@@ -1972,11 +1972,7 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     if header_idx != -1:
                         df_aeat.columns = [str(c).strip() for c in df_aeat.iloc[header_idx]]
                         df_aeat = df_aeat.iloc[header_idx + 1:].reset_index(drop=True)
-                # -------------------------------------------------------------
                 
-                st.write("📊 **Vista previa de los datos limpios:**")
-                st.dataframe(df_aeat)
-
                 # Buscador inteligente de columnas
                 cols = df_aeat.columns.tolist()
                 def encontrar_columna(claves):
@@ -2004,12 +2000,10 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     res_empresas = supabase.table("Empresas").select("ISIN, NombreING, NombreHacienda").execute()
                     lista_empresas = res_empresas.data if res_empresas.data else []
                     
-                    # Diccionarios para traducir el nombre
                     map_isin = {str(e["ISIN"]).strip().upper(): e["NombreING"] for e in lista_empresas if e.get("ISIN")}
                     map_hac = {str(e["NombreHacienda"]).strip().upper(): e["NombreING"] for e in lista_empresas if e.get("NombreHacienda")}
                     map_ing = {str(e["NombreING"]).strip().upper(): e["NombreING"] for e in lista_empresas if e.get("NombreING")}
 
-                    # Diccionario NUEVO para extraer el ISIN
                     map_name_to_isin = {}
                     for e in lista_empresas:
                         isin_val = str(e.get("ISIN", "")).strip().upper()
@@ -2018,16 +2012,68 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                             if e.get("NombreING"): map_name_to_isin[str(e["NombreING"]).strip().upper()] = isin_val
 
                 except Exception as e:
-                    st.warning(f"⚠️ No se pudo cargar la tabla de Empresas para traducir nombres y buscar ISINs: {e}")
+                    st.warning(f"⚠️ No se pudo cargar la tabla de Empresas: {e}")
                     map_isin, map_hac, map_ing, map_name_to_isin = {}, {}, {}, {}
 
+                # 3️⃣ ENRIQUECEMOS EL DATAFRAME (MAGIA EN VIVO PARA LA VISTA PREVIA)
+                def enriquecer_fila(row):
+                    raw_codigo = str(row.get(col_codigo, "")).strip() if col_codigo else ""
+                    raw_emisor = str(row.get(col_nom_emi, "")).strip() if col_nom_emi else ""
+                    
+                    if raw_emisor.lower() in ["emisor", "nombre emisor", "nombre del emisor"]:
+                        return pd.Series(["", ""]) 
+
+                    codigo_upper = raw_codigo.upper()
+                    cod_limpio = codigo_upper.replace("CODIGO:", "").strip()
+                    emisor_upper = raw_emisor.upper()
+                    
+                    # A. Traductor de Nombre
+                    nombre_traducido = raw_emisor 
+                    if emisor_upper in map_hac: nombre_traducido = map_hac[emisor_upper]
+                    elif cod_limpio in map_hac: nombre_traducido = map_hac[cod_limpio]
+                    elif codigo_upper in map_hac: nombre_traducido = map_hac[codigo_upper]
+                    elif emisor_upper in map_isin: nombre_traducido = map_isin[emisor_upper]
+                    elif cod_limpio in map_isin: nombre_traducido = map_isin[cod_limpio]
+                    else:
+                        for n_ing in map_ing.keys():
+                            if n_ing in emisor_upper or n_ing in cod_limpio:
+                                nombre_traducido = map_ing[n_ing]
+                                break
+
+                    # B. Cazador de ISIN
+                    isin_encontrado = ""
+                    if re.match(r"^[A-Z]{2}[A-Z0-9]{10}$", cod_limpio):
+                        isin_encontrado = cod_limpio
+                    else:
+                        if emisor_upper in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_upper]
+                        elif cod_limpio in map_name_to_isin: isin_encontrado = map_name_to_isin[cod_limpio]
+                        elif nombre_traducido.upper() in map_name_to_isin: isin_encontrado = map_name_to_isin[nombre_traducido.upper()]
+                        else:
+                            for n_db, i_db in map_name_to_isin.items():
+                                if n_db in emisor_upper or n_db in cod_limpio:
+                                    isin_encontrado = i_db
+                                    break
+                    
+                    return pd.Series([isin_encontrado, nombre_traducido])
+
+                # Aplicamos la función y creamos las dos columnas nuevas
+                df_aeat[["ISIN_Detectado", "Empresa_Traducida"]] = df_aeat.apply(enriquecer_fila, axis=1)
+
+                # Reordenamos las columnas para que el ISIN y el Nombre Traducido salgan las primeras a la izquierda
+                cols_order = ["ISIN_Detectado", "Empresa_Traducida"] + [c for c in df_aeat.columns if c not in ["ISIN_Detectado", "Empresa_Traducida"]]
+                df_aeat = df_aeat[cols_order]
+
+                st.write("📊 **Vista previa de los datos enriquecidos (Listos para subir):**")
+                st.dataframe(df_aeat)
+
+                # -------------------------------------------------------------
 
                 st.info("💡 **Filtro Anti-Duplicados Inteligente Activado:** El sistema cotejará Código + NIF + Importe.")
 
                 if st.button("☁️ Subir a Base de Datos (informefiscalaeat)", type="primary"):
-                    with st.spinner("Buscando ISINs, comprobando duplicados y preparando la subida..."):
+                    with st.spinner("Comprobando duplicados y subiendo a la nube..."):
                         try:
-                            # 3️⃣ TRAEMOS LO QUE YA EXISTE PARA CREAR LA "HUELLA DIGITAL"
+                            # 4️⃣ TRAEMOS LO QUE YA EXISTE PARA CREAR LA "HUELLA DIGITAL"
                             res_db = supabase.table("informefiscalaeat").select("codigo_emisor, nif_emisor, nombre_emisor, importe_integro").eq("ejercicio_fiscal", int(ejercicio_fiscal_aeat)).execute()
                             
                             db_existentes = [] 
@@ -2056,44 +2102,10 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                                 
                                 if raw_emisor.lower() in ["emisor", "nombre emisor", "nombre del emisor"]:
                                     continue
-                                    
-                                codigo_upper = raw_codigo.upper()
-                                cod_limpio = codigo_upper.replace("CODIGO:", "").strip()
-                                emisor_upper = raw_emisor.upper()
                                 
-                                # -------------------------------------------------------------
-                                # 🕵️ TRADUCTOR MÁGICO DE EMPRESAS (NOMBRES)
-                                # -------------------------------------------------------------
-                                nombre_traducido = raw_emisor 
-                                if emisor_upper in map_hac: nombre_traducido = map_hac[emisor_upper]
-                                elif cod_limpio in map_hac: nombre_traducido = map_hac[cod_limpio]
-                                elif codigo_upper in map_hac: nombre_traducido = map_hac[codigo_upper]
-                                elif emisor_upper in map_isin: nombre_traducido = map_isin[emisor_upper]
-                                elif cod_limpio in map_isin: nombre_traducido = map_isin[cod_limpio]
-                                else:
-                                    for n_ing in map_ing.keys():
-                                        if n_ing in emisor_upper or n_ing in cod_limpio:
-                                            nombre_traducido = map_ing[n_ing]
-                                            break
-
-                                # -------------------------------------------------------------
-                                # 🎯 CAZADOR DE ISINs (NUEVO)
-                                # -------------------------------------------------------------
-                                isin_encontrado = ""
-                                # 1. ¿El código es ya un ISIN perfecto?
-                                if re.match(r"^[A-Z]{2}[A-Z0-9]{10}$", cod_limpio):
-                                    isin_encontrado = cod_limpio
-                                else:
-                                    # 2. Buscamos en el diccionario de la DB
-                                    if emisor_upper in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_upper]
-                                    elif cod_limpio in map_name_to_isin: isin_encontrado = map_name_to_isin[cod_limpio]
-                                    elif nombre_traducido.upper() in map_name_to_isin: isin_encontrado = map_name_to_isin[nombre_traducido.upper()]
-                                    else:
-                                        # Búsqueda difusa (si "L'OREAL" está dentro del nombre que da Hacienda)
-                                        for n_db, i_db in map_name_to_isin.items():
-                                            if n_db in emisor_upper or n_db in cod_limpio:
-                                                isin_encontrado = i_db
-                                                break
+                                # Rescatamos los valores que ya hemos calculado arriba para la vista previa
+                                nombre_traducido = str(row.get("Empresa_Traducida", raw_emisor)).strip()
+                                isin_encontrado = str(row.get("ISIN_Detectado", "")).strip()
 
                                 # Extraemos los valores para la Huella Digital del Excel
                                 nif_emi_excel = str(row.get(col_nif_emi, "")).strip()[:50] if col_nif_emi else ""
@@ -2119,13 +2131,13 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                                         "retenciones": round(val_ret, 2),
                                         "gastos_deducibles": round(euro_a_numero(row.get(col_gastos, 0)), 2) if col_gastos else 0.0,
                                         "ejercicio_fiscal": int(ejercicio_fiscal_aeat),
-                                        "isin": isin_encontrado[:50]  # <--- COLUMNA ISIN AÑADIDA AQUÍ
+                                        "isin": isin_encontrado[:50] 
                                     }
                                     registros_aeat.append(registro)
                             
                             if registros_aeat:
                                 supabase.table("informefiscalaeat").insert(registros_aeat).execute()
-                                st.success(f"✅ ¡{len(registros_aeat)} operaciones NUEVAS guardadas con éxito (con su ISIN asociado) para el año {ejercicio_fiscal_aeat}!")
+                                st.success(f"✅ ¡{len(registros_aeat)} operaciones NUEVAS guardadas con éxito para el año {ejercicio_fiscal_aeat}!")
                                 st.balloons()
                             else:
                                 st.info("ℹ️ No se ha subido nada. Todos los datos de este Excel ya estaban en tu base de datos (0 duplicados).")
