@@ -1847,7 +1847,8 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 col_penal = encontrar_columna(["penalización", "penalizacion"])
                 col_ret = encontrar_columna(["retencion", "retención", "retenciones"])
                 col_gastos = encontrar_columna(["gastos", "deducibles"])
-                col_rol = encontrar_columna(["declarante"])
+                
+                # (Se ha eliminado col_rol para adaptarse a tu nuevo schema)
 
                 # 2️⃣ DESCARGAMOS TU DICCIONARIO DE EMPRESAS DESDE SUPABASE
                 try:
@@ -1903,7 +1904,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                         # -------------------------------------------------------------
 
                         registro = {
-                            "rol_declarante": str(row.get(col_rol, "")).strip()[:50] if col_rol else "",
                             "nif_declarante": str(row.get(col_nif_dec, "")).strip()[:50] if col_nif_dec else "",
                             "nombre_declarante": str(row.get(col_nom_dec, "")).strip()[:250] if col_nom_dec else "",
                             "codigo_emisor": raw_codigo[:100],
