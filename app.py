@@ -1993,7 +1993,7 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 col_ret = encontrar_columna(["retencion", "retención", "retenciones"])
                 col_gastos = encontrar_columna(["gastos", "deducibles"])
 
-                # 2️⃣ DESCARGAMOS TU DICCIONARIO DE EMPRESAS (BLINDADO ANTI-VACÍOS)
+                # 2️⃣ DESCARGAMOS TU DICCIONARIO DE EMPRESAS Y CREAMOS LA LISTA DE ISINS MAESTRA
                 try:
                     from supabase import create_client, Client
                     supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
@@ -2005,24 +2005,26 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     map_hac = {}
                     map_ing = {}
                     map_name_to_isin = {}
+                    isins_en_db = set() # 🎯 LISTA MAESTRA DE ISINS PARA COMPROBAR DESPUÉS
                     
                     for e in lista_empresas:
                         isin_val = str(e.get("ISIN", "")).strip().upper()
                         nom_ing = str(e.get("NombreING", "")).strip().upper()
                         nom_hac = str(e.get("NombreHacienda", "")).strip().upper()
                         
-                        if isin_val and nom_ing: map_isin[isin_val] = nom_ing
+                        if isin_val:
+                            isins_en_db.add(isin_val) # Lo guardamos en la lista maestra
+                            if nom_ing: map_isin[isin_val] = nom_ing
                         if nom_hac and nom_ing: map_hac[nom_hac] = nom_ing
                         if nom_ing: map_ing[nom_ing] = nom_ing
                         
-                        # Guardamos para el buscador de ISIN solo si los nombres son reales (no vacíos)
                         if isin_val:
                             if nom_hac: map_name_to_isin[nom_hac] = isin_val
                             if nom_ing: map_name_to_isin[nom_ing] = isin_val
 
                 except Exception as e:
                     st.warning(f"⚠️ No se pudo cargar la tabla de Empresas: {e}")
-                    map_isin, map_hac, map_ing, map_name_to_isin = {}, {}, {}, {}
+                    map_isin, map_hac, map_ing, map_name_to_isin, isins_en_db = {}, {}, {}, {}, set()
 
                 # -------------------------------------------------------------
                 # 🚨 DICCIONARIO DE CASOS ESPECIALES
@@ -2059,7 +2061,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                         
                     emisor_limpio = limpiar_ruido(emisor_upper)
 
-                    # A. Traductor de Nombre
                     nombre_traducido = raw_emisor 
                     if emisor_upper in map_hac: nombre_traducido = map_hac[emisor_upper]
                     elif emisor_limpio in map_hac: nombre_traducido = map_hac[emisor_limpio]
@@ -2070,7 +2071,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                                 nombre_traducido = map_ing[n_ing]
                                 break
 
-                    # B. 🎯 CAZADOR DE ISIN
                     isin_encontrado = ""
                     
                     if emisor_upper in map_nombres_rebeldes:
@@ -2088,7 +2088,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                             elif emisor_limpio in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_limpio]
                             elif nombre_traducido.upper() in map_name_to_isin: isin_encontrado = map_name_to_isin[nombre_traducido.upper()]
                             else:
-                                # 🛡️ EL FILTRO ANTI-TEXTO VACÍO
                                 for n_db, i_db in map_name_to_isin.items():
                                     if n_db and (n_db in emisor_upper or n_db in emisor_limpio):
                                         isin_encontrado = i_db
@@ -2107,6 +2106,45 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                 st.write("📊 **Vista previa de los datos enriquecidos (Listos para subir):**")
                 st.dataframe(df_aeat)
 
+                # -------------------------------------------------------------
+                # 🚨 ESCÁNER DE COHERENCIA CONTRA LA TABLA "EMPRESAS"
+                # -------------------------------------------------------------
+                empresas_sin_isin = set()
+                isins_no_registrados = set()
+                
+                for _, row in df_aeat.iterrows():
+                    isin_val = str(row.get("ISIN_Detectado", "")).strip()
+                    nom_val = str(row.get("Empresa_Traducida", "")).strip()
+                    raw_nom = str(row.get(col_nom_emi, "")).strip()
+                    
+                    if raw_nom.lower() in ["emisor", "nombre emisor", "nombre del emisor"] or (row.get(col_bruto, "") == "" and row.get(col_ret, "") == ""):
+                        continue # Saltamos cabeceras y líneas vacías
+
+                    if not isin_val:
+                        empresas_sin_isin.add(nom_val if nom_val else raw_nom)
+                    elif isin_val not in isins_en_db:
+                        isins_no_registrados.add(f"{nom_val} (ISIN: {isin_val})")
+
+                # Mostrar las advertencias si hay alguna falla
+                if empresas_sin_isin or isins_no_registrados:
+                    st.warning("⚠️ **ATENCIÓN: Tienes tareas pendientes en tu Gestor de Empresas**")
+                    
+                    if empresas_sin_isin:
+                        st.markdown("**1️⃣ Empresas sin ISIN (Añádelas en el Gestor de Empresas):**")
+                        for emp in sorted(list(empresas_sin_isin)):
+                            st.write(f"- ❌ {emp}")
+                            
+                    if isins_no_registrados:
+                        st.markdown("**2️⃣ ISINs detectados en el Excel, pero que NO están guardados en tu base de datos:**")
+                        for isin_f en sorted(list(isins_no_registrados)):
+                            st.write(f"- 🔍 {isin_f}")
+                            
+                    st.info("💡 **Consejo:** Añade estas empresas en la pestaña '🏢 Gestor de Empresas (DB)' antes de auditar, para que el cruce sea 100% perfecto.")
+                else:
+                    st.success("✅ ¡Matrícula de Honor! Todos los ISINs del Excel están perfectamente registrados en tu base de datos.")
+
+                st.markdown("---")
+                
                 # -------------------------------------------------------------
                 st.info("💡 **Filtro Anti-Duplicados Inteligente Activado:** El sistema cotejará Código + NIF + Importe.")
 
