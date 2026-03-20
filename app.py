@@ -793,238 +793,231 @@ elif opcion == "🗂️ Renombrador de PDFs":
 
 
 
-
-
 # ==========================================
-# 🚀 APLICACIÓN 4: INFORME FISCAL (DIVIDENDOS Y DRIPS)
+# 🚀 APLICACIÓN 4: EXTRACTOR INFORME FISCAL ING
 # ==========================================
-elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
-    st.title("📄 Extractor Total del Informe Fiscal (ING)")
-    st.write("Sube tu **Informe Fiscal Anual de ING** en PDF para extraer de golpe **todos los Dividendos** y **DRIPs**.")
-    archivos_pdf_inf = st.file_uploader("Sube tu PDF de Datos Fiscales aquí", type=["pdf"], accept_multiple_files=True, key="inf")
+elif opcion == "📄 Extractor Informe Fiscal (ING)":
+    st.title("📄 Extractor Total del Informe Fiscal ING")
+    st.write("Sube el PDF de Información Fiscal de ING. Extraeremos DRIPs, Dividendos y los enviaremos a tu base de datos.")
 
-    def formato_hacienda(val):
-        return f"{euro_a_numero(val):.2f}"
-        
+    from datetime import datetime
+    anio_fiscal_defecto = datetime.now().year - 1
+
+    ejercicio_fiscal_ing = st.number_input(
+        "📅 Año Fiscal del documento (ING):", 
+        min_value=2020, 
+        max_value=2050, 
+        value=anio_fiscal_defecto, 
+        key="año_ing"
+    )
+    
+    archivos_pdf_inf = st.file_uploader("Sube tu PDF de Datos Fiscales de ING aquí", type=["pdf"], accept_multiple_files=True, key="inf_ing")
+
+    # Función para asignar banderas/países
     def obtener_bandera(isin, empresa):
         if isinstance(isin, str) and len(isin) >= 2 and isin != "ISIN no encontrado":
             prefijo = isin[:2].upper()
-            banderas = {
-                "ES": "🇪🇸 España", "US": "🇺🇸 USA", "DE": "🇩🇪 Alemania", 
-                "FR": "🇫🇷 Francia", "NL": "🇳🇱 Países Bajos", "GB": "🇬🇧 Reino Unido", 
-                "IE": "🇮🇪 Irlanda", "CH": "🇨🇭 Suiza", "IT": "🇮🇹 Italia",
-                "BE": "🇧🇪 Bélgica", "PT": "🇵🇹 Portugal", "SE": "🇸🇪 Suecia",
-                "CA": "🇨🇦 Canadá", "JP": "🇯🇵 Japón", "AU": "🇦🇺 Australia"
-            }
-            if prefijo in banderas:
-                return banderas[prefijo]
-        
-        empresa_mayus = str(empresa).upper()
-        
-        # 📚 DICCIONARIO INFALIBLE 
-        conocidas = {
-            "BASF": "🇩🇪 Alemania", "ALLIANZ": "🇩🇪 Alemania",
-            "LOUIS VUITTON": "🇫🇷 Francia", "LVMH": "🇫🇷 Francia",
-            "AHOLD": "🇳🇱 Países Bajos", "ASML": "🇳🇱 Países Bajos",
-            "MONDI": "🇬🇧 Reino Unido", "PEPSICO": "🇺🇸 USA",
-            "T ROWE PRICE": "🇺🇸 USA", "MCDONALDS": "🇺🇸 USA",
-            "3M CO": "🇺🇸 USA", "TYSON FOODS": "🇺🇸 USA",
-            "REALTY INCOME": "🇺🇸 USA", "W.P. CAREY": "🇺🇸 USA",
-            "AMERICAN TOWER": "🇺🇸 USA", "VERIZON": "🇺🇸 USA",
-            "INTEL": "🇺🇸 USA", "PHILIP MORRIS": "🇺🇸 USA",
-            "BRITISH AMERICAN": "🇬🇧 Reino Unido",
-            "VODAFONE": "🇬🇧 Reino Unido",
-            "ASSOCIATED BRITISH": "🇬🇧 Reino Unido",
-            "DIAGEO": "🇬🇧 Reino Unido"
-        }
-        
-        for clave, pais in conocidas.items():
-            if clave in empresa_mayus:
-                return pais
-                
-        if " INC" in empresa_mayus or " CORP" in empresa_mayus or " LLC" in empresa_mayus: return "🇺🇸 USA"
-        if " NV" in empresa_mayus: return "🇳🇱 Países Bajos"
-        if " AG" in empresa_mayus: return "🇩🇪 Alemania"
-        if " PLC" in empresa_mayus: return "🇬🇧 Reino Unido"
-        if " SA" in empresa_mayus: return "🇪🇸/🇫🇷 SA"
-            
-        return "🏳️ Desconocido"
+            banderas = {"ES": "España", "US": "USA", "DE": "Alemania", "FR": "Francia", "NL": "Países Bajos", "GB": "Reino Unido"}
+            if prefijo in banderas: return banderas[prefijo]
+        if " INC" in str(empresa).upper() or " CORP" in str(empresa).upper(): return "USA"
+        if " NV" in str(empresa).upper(): return "Países Bajos"
+        if " PLC" in str(empresa).upper(): return "Reino Unido"
+        return "Desconocido"
 
     if archivos_pdf_inf:
         datos_informe = []
-        total_archivos = len(archivos_pdf_inf)
-        barra_progreso = st.progress(0)
-        texto_estado = st.empty()
-
-        for i, archivo in enumerate(archivos_pdf_inf):
-            texto_estado.text(f"⏳ Analizando Informe Fiscal ({i+1}/{total_archivos}): {archivo.name}...")
-            try:
-                with pdfplumber.open(archivo) as pdf:
-                    texto_completo = ""
-                    for page in pdf.pages:
-                        texto_pagina = page.extract_text(layout=True)
-                        if not texto_pagina: texto_pagina = page.extract_text()
-                        if texto_pagina: texto_completo += texto_pagina + "\n"
-                    
-                    if texto_completo:
-                        lineas = texto_completo.split('\n')
-                        patron_drip = r"(.*?)\s+(Nacional|Internacional)\s+(\d{2}/\d{2}/\d{4})\s+STOCK DIVIDEND\s+(\d+)\s+([\d.,]+)\s*€"
-                        patron_div = r"(.*?)\s+(Nacional|Internacional)\s+DIVIDENDO\s+([\d,.]+)\s*€\s+([\d,.]+)\s*€(?:\s+([\d,.]+)\s*€)?"
+        with st.spinner("Analizando Informe Fiscal de ING..."):
+            for archivo in archivos_pdf_inf:
+                try:
+                    import pdfplumber
+                    with pdfplumber.open(archivo) as pdf:
+                        texto_completo = ""
+                        for page in pdf.pages:
+                            texto_pagina = page.extract_text(layout=True)
+                            if not texto_pagina: texto_pagina = page.extract_text()
+                            if texto_pagina: texto_completo += texto_pagina + "\n"
                         
-                        for idx, linea in enumerate(lineas):
-                            match_drip = re.search(patron_drip, linea)
-                            if match_drip:
-                                empresa_part1 = match_drip.group(1).strip()
-                                mercado = match_drip.group(2).strip()
-                                fecha = match_drip.group(3).strip()
-                                titulos = match_drip.group(4).strip()
-                                importe = match_drip.group(5).strip()
+                        if texto_completo:
+                            lineas = texto_completo.split('\n')
+                            # Patrones de búsqueda adaptados a ING
+                            patron_drip = r"(.*?)\s+(Nacional|Internacional)\s+(\d{2}/\d{2}/\d{4})\s+STOCK DIVIDEND\s+(\d+)\s+([\d.,]+)\s*€"
+                            patron_div = r"(.*?)\s+(Nacional|Internacional)\s+DIVIDENDO\s+([\d,.]+)\s*€\s+([\d,.]+)\s*€(?:\s+([\d,.]+)\s*€)?"
+                            
+                            for idx, linea in enumerate(lineas):
+                                # 1️⃣ EXTRACCIÓN DE DRIPs (Stock Dividends)
+                                match_drip = re.search(patron_drip, linea)
+                                if match_drip:
+                                    empresa_full = match_drip.group(1).strip()
+                                    fecha = match_drip.group(3).strip()
+                                    titulos = match_drip.group(4).strip()
+                                    importe = match_drip.group(5).strip()
+                                    
+                                    isin_encontrado = ""
+                                    for j in range(1, 4):
+                                        if idx + j >= len(lineas): break
+                                        match_isin = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)", lineas[idx + j])
+                                        if match_isin:
+                                            isin_encontrado = match_isin.group(1)
+                                            break
+                                            
+                                    bruto_num = euro_a_numero(importe)
+
+                                    datos_informe.append({
+                                        "fecha_abono": fecha,
+                                        "isin": isin_encontrado,
+                                        "concepto": "STOCK DIVIDEND",
+                                        "importe_neto": bruto_num,
+                                        "retencion_origen": 0.0,
+                                        "porcentaje_retencion_origen": 0.0,
+                                        "retencion_destino": 0.0,
+                                        "porcentaje_retencion_destino": 0.0,
+                                        "importe_bruto": bruto_num,
+                                        "empresa": empresa_full,
+                                        "pais": obtener_bandera(isin_encontrado, empresa_full),
+                                        "cuenta_valores": "",
+                                        "numero_titulos": float(titulos) if titulos.isdigit() else 0.0,
+                                        "cuenta_abono": "",
+                                        "retencion_recuperable": 0.0
+                                    })
+                                    continue
                                 
-                                empresa_full = empresa_part1
-                                isin_encontrado = "ISIN no encontrado"
-                                
-                                for j in range(1, 4):
-                                    if idx + j >= len(lineas): break
-                                    linea_siguiente = lineas[idx + j].strip()
-                                    if not linea_siguiente: continue
-                                    match_isin = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)", linea_siguiente)
+                                # 2️⃣ EXTRACCIÓN DE DIVIDENDOS EN EFECTIVO
+                                match_div = re.search(patron_div, linea)
+                                if match_div:
+                                    empresa_raw = match_div.group(1).strip()
+                                    mercado = match_div.group(2).strip()
+                                    bruto = match_div.group(3).strip()
+                                    
+                                    if mercado == "Nacional":
+                                        ret_origen = "0,00"
+                                        ret_destino = match_div.group(4).strip()
+                                    else:
+                                        ret_origen = match_div.group(4).strip()
+                                        ret_destino = match_div.group(5).strip() if match_div.group(5) else "0,00"
+                                    
+                                    isin_encontrado = ""
+                                    match_isin = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)", empresa_raw)
                                     if match_isin:
                                         isin_encontrado = match_isin.group(1)
-                                        break
+                                        empresa_full = empresa_raw.replace(f"({isin_encontrado})", "").strip()
                                     else:
-                                        palabra = linea_siguiente.split("   ")[0].strip()
-                                        if palabra: empresa_full += " " + palabra
+                                        empresa_full = empresa_raw
+                                        for j in range(1, 3):
+                                            if idx + j < len(lineas):
+                                                match_isin_next = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)", lineas[idx + j])
+                                                if match_isin_next:
+                                                    isin_encontrado = match_isin_next.group(1)
+                                                    break
 
-                                titulos_float = float(titulos) if titulos.isdigit() else 1.0
-                                importe_float = euro_a_numero(importe)
-                                imp_titulo = importe_float / titulos_float if titulos_float > 0 else 0.0
+                                    # MATEMÁTICAS AVANZADAS
+                                    bruto_num = euro_a_numero(bruto)
+                                    ret_ori_num = euro_a_numero(ret_origen)
+                                    ret_des_num = euro_a_numero(ret_destino)
+                                    neto_num = bruto_num - ret_ori_num - ret_des_num
+                                    
+                                    # Cálculo de Porcentajes de retención
+                                    pct_ori = round((ret_ori_num / bruto_num) * 100, 2) if bruto_num > 0 else 0.0
+                                    pct_des = round((ret_des_num / bruto_num) * 100, 2) if bruto_num > 0 else 0.0
+                                    
+                                    # Cálculo de Retención Recuperable (Máximo 15% del Bruto por Tratado de Doble Imposición)
+                                    recuperable = 0.0
+                                    if ret_ori_num > 0:
+                                        maximo_recuperable = bruto_num * 0.15
+                                        recuperable = round(min(ret_ori_num, maximo_recuperable), 2)
 
-                                datos_informe.append({
-                                    "Fecha Abono": fecha,
-                                    "ISIN": isin_encontrado, 
-                                    "Concepto": f"STOCK DIVIDENDO ({empresa_full})",
-                                    "Importe Neto (€)": formato_hacienda(importe),
-                                    "Retención en origen (€)": "0.00",
-                                    "% retención en origen": "0%",
-                                    "Retención en destino (€)": "0.00",
-                                    "% retención en destino": "0%",
-                                    "Importe Bruto (€)": formato_hacienda(importe),
-                                    "Empresa": empresa_full,
-                                    "País": obtener_bandera(isin_encontrado, empresa_full),
-                                    "Cuenta de Valores": "0",
-                                    "Número de títulos": titulos,
-                                    "Importe por título (€)": f"{imp_titulo:.2f}",
-                                    "Cuenta Abono": "N/A",
-                                    "Retención Recuperable (Max 15%) (€)": "0.00"
-                                })
-                                continue
-                            
-                            match_div = re.search(patron_div, linea)
-                            if match_div:
-                                empresa_raw = match_div.group(1).strip()
-                                mercado = match_div.group(2).strip()
-                                bruto = match_div.group(3).strip()
-                                
-                                if mercado == "Nacional":
-                                    ret_origen = "0,00"
-                                    ret_destino = match_div.group(4).strip()
-                                else:
-                                    ret_origen = match_div.group(4).strip()
-                                    ret_destino = match_div.group(5).strip() if match_div.group(5) else "0,00"
-                                
-                                isin_encontrado = "ISIN no encontrado"
-                                match_isin = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)", empresa_raw)
-                                if match_isin:
-                                    isin_encontrado = match_isin.group(1)
-                                    empresa_full = empresa_raw.replace(f"({isin_encontrado})", "").strip()
-                                else:
-                                    empresa_full = empresa_raw
-                                    for j in range(1, 3):
-                                        if idx + j < len(lineas):
-                                            linea_siguiente = lineas[idx + j].strip()
-                                            match_isin_next = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)", linea_siguiente)
-                                            if match_isin_next:
-                                                isin_encontrado = match_isin_next.group(1)
-                                                break
-
-                                bruto_num = euro_a_numero(bruto)
-                                ret_o_num = euro_a_numero(ret_origen)
-                                ret_d_num = euro_a_numero(ret_destino)
-                                neto_num = bruto_num - ret_o_num - ret_d_num
-                                
-                                pct_origen = calcular_porcentaje(ret_origen, bruto)
-                                pct_destino = calcular_porcentaje(ret_destino, bruto)
-                                ret_recuperable = calcular_retencion_recuperable(pct_origen, bruto, ret_origen)
-
-                                datos_informe.append({
-                                    "Fecha Abono": "Resumen 2024",
-                                    "ISIN": isin_encontrado, 
-                                    "Concepto": f"DIVIDENDO ({empresa_full})",
-                                    "Importe Neto (€)": f"{neto_num:.2f}",
-                                    "Retención en origen (€)": formato_hacienda(ret_origen),
-                                    "% retención en origen": pct_origen,
-                                    "Retención en destino (€)": formato_hacienda(ret_destino),
-                                    "% retención en destino": pct_destino,
-                                    "Importe Bruto (€)": formato_hacienda(bruto),
-                                    "Empresa": empresa_full,
-                                    "País": obtener_bandera(isin_encontrado, empresa_full),
-                                    "Cuenta de Valores": "0",
-                                    "Número de títulos": "Varios", 
-                                    "Importe por título (€)": "0.00",
-                                    "Cuenta Abono": "N/A",
-                                    "Retención Recuperable (Max 15%) (€)": formato_hacienda(ret_recuperable)
-                                })
-            except Exception as e:
-                st.warning(f"⚠️ Error al leer '{archivo.name}'. Se ha omitido.")
-            
-            gc.collect()
-            barra_progreso.progress((i + 1) / total_archivos)
-
-        texto_estado.empty()
+                                    datos_informe.append({
+                                        "fecha_abono": f"31/12/{ejercicio_fiscal_ing}", # Fecha genérica ya que ING agrupa en el informe
+                                        "isin": isin_encontrado,
+                                        "concepto": "DIVIDENDO",
+                                        "importe_neto": round(neto_num, 2),
+                                        "retencion_origen": round(ret_ori_num, 2),
+                                        "porcentaje_retencion_origen": pct_ori,
+                                        "retencion_destino": round(ret_des_num, 2),
+                                        "porcentaje_retencion_destino": pct_des,
+                                        "importe_bruto": round(bruto_num, 2),
+                                        "empresa": empresa_full,
+                                        "pais": obtener_bandera(isin_encontrado, empresa_full),
+                                        "cuenta_valores": "",
+                                        "numero_titulos": 0.0, # 0 porque ING no especifica títulos en este bloque
+                                        "cuenta_abono": "",
+                                        "retencion_recuperable": recuperable
+                                    })
+                except Exception as e:
+                    st.warning(f"⚠️ Error procesando {archivo.name}: {e}")
 
         if datos_informe:
-            st.success(f"¡Magia! Se extrajeron {len(datos_informe)} operaciones del informe fiscal en formato Hacienda.")
-            
-            total_bruto_029 = sum(euro_a_numero(d["Importe Bruto (€)"]) for d in datos_informe)
-            
-            datos_ext = [d for d in datos_informe if d["% retención en origen"] in ["15%", "25%", "26,375%"]]
-            total_bruto_588 = sum(euro_a_numero(d["Importe Bruto (€)"]) for d in datos_ext)
-            total_neto_588 = sum(euro_a_numero(d["Importe Neto (€)"]) for d in datos_ext)
-            total_ret_recup_588 = sum(euro_a_numero(d["Retención Recuperable (Max 15%) (€)"]) for d in datos_ext)
+            df_ing = pd.DataFrame(datos_informe)
+            st.write("📊 **Vista previa de los datos estructurados:**")
+            st.dataframe(df_ing)
 
-            st.markdown("---")
-            st.header("📝 Resumen Automático para la Renta")
-            
-            st.info("**Casilla 029** (Dividendos y demás rendimientos por la participación en fondos propios de entidades)")
-            st.metric("Suma Total Dividendo Bruto", f"{total_bruto_029:.2f} €")
-            
-            st.info("**Casilla 588** (Deducción por doble imposición internacional)")
-            col_r1, col_r2, col_r3 = st.columns(3)
-            col_r1.metric("Total Brutos (USA/FRA/ALE)", f"{total_bruto_588:.2f} €")
-            col_r2.metric("Total Netos (USA/FRA/ALE)", f"{total_neto_588:.2f} €")
-            col_r3.metric("Retención Recuperable (Máx 15%)", f"{total_ret_recup_588:.2f} €")
-            st.caption("*Nota: La retención ya está calculada aplicando automáticamente el tope máximo legal del 15% para países como Alemania o Francia.*")
-            st.markdown("---")
+            st.info("💡 **Filtro Anti-Duplicados Activado:** El sistema identificará operaciones repetidas comparando el ISIN y el Importe Bruto.")
 
-            df_informe = pd.DataFrame(datos_informe)
-            
-            columnas_ordenadas = ["Fecha Abono", "ISIN", "Concepto", "Importe Neto (€)", "Retención en origen (€)", 
-                                  "% retención en origen", "Retención en destino (€)", "% retención en destino", 
-                                  "Importe Bruto (€)", "Empresa", "País", "Cuenta de Valores", "Número de títulos", 
-                                  "Importe por título (€)", "Cuenta Abono", "Retención Recuperable (Max 15%) (€)"]
-            df_informe = df_informe[columnas_ordenadas]
-            
-            fila_totales = {col: "" for col in df_informe.columns}
-            fila_totales["Fecha Abono"] = "TOTALES"
-            cols_a_sumar_inf = ["Importe Neto (€)", "Retención en origen (€)", "Retención en destino (€)", "Importe Bruto (€)", "Retención Recuperable (Max 15%) (€)"]
-            for col in cols_a_sumar_inf:
-                suma = df_informe[col].apply(euro_a_numero).sum()
-                fila_totales[col] = f"{suma:.2f}"
-            
-            df_informe = pd.concat([df_informe, pd.DataFrame([fila_totales])], ignore_index=True)
-            st.dataframe(df_informe)
-            csv_informe = df_informe.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar Excel (Formato AEAT)", data=csv_informe, file_name='informe_fiscal_completo.csv', mime='text/csv')
+            if st.button("☁️ Subir a Base de Datos (informefiscaling)", type="primary", use_container_width=True):
+                with st.spinner("Comprobando duplicados y guardando en Supabase..."):
+                    try:
+                        from supabase import create_client, Client
+                        supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+                        
+                        # 1️⃣ Traer existentes para HUELLA DIGITAL (¡Ahora compara como entero!)
+                        res_db = supabase.table("informefiscaling").select("isin, importe_bruto").eq("ejercicio_fiscal", int(ejercicio_fiscal_ing)).execute()
+                        
+                        db_existentes = []
+                        if res_db.data:
+                            for row_db in res_db.data:
+                                isin_db = str(row_db.get("isin", "")).strip()
+                                imp_db = round(float(row_db.get("importe_bruto", 0)), 2)
+                                firma = f"{isin_db}_{imp_db}"
+                                db_existentes.append(firma) # Usamos Lista para permitir duplicados legítimos
+                        
+                        registros_a_subir = []
+                        for _, row in df_ing.iterrows():
+                            isin_excel = str(row["isin"]).strip()
+                            imp_excel = round(float(row["importe_bruto"]), 2)
+                            firma_actual = f"{isin_excel}_{imp_excel}"
+                            
+                            # 🛡️ Comprobación de duplicados
+                            if firma_actual in db_existentes:
+                                # Tachamos uno de la lista si ya existe, por si hay otro igual
+                                db_existentes.remove(firma_actual)
+                            else:
+                                registro = {
+                                    "fecha_abono": str(row["fecha_abono"]),
+                                    "isin": isin_excel[:50],
+                                    "concepto": str(row["concepto"])[:100],
+                                    "importe_neto": float(row["importe_neto"]),
+                                    "retencion_origen": float(row["retencion_origen"]),
+                                    "porcentaje_retencion_origen": float(row["porcentaje_retencion_origen"]),
+                                    "retencion_destino": float(row["retencion_destino"]),
+                                    "porcentaje_retencion_destino": float(row["porcentaje_retencion_destino"]),
+                                    "importe_bruto": float(row["importe_bruto"]),
+                                    "empresa": str(row["empresa"])[:250],
+                                    "pais": str(row["pais"])[:100],
+                                    "cuenta_valores": str(row["cuenta_valores"]),
+                                    "numero_titulos": float(row["numero_titulos"]),
+                                    "cuenta_abono": str(row["cuenta_abono"]),
+                                    "retencion_recuperable": float(row["retencion_recuperable"]),
+                                    "ejercicio_fiscal": int(ejercicio_fiscal_ing) # 🎯 ¡AHORA ES INTEGER!
+                                }
+                                registros_a_subir.append(registro)
+                                # Añadimos a la lista de existentes por si el PDF trae el mismo dividendo repetido en otra línea
+                                db_existentes.append(firma_actual)
+                        
+                        if registros_a_subir:
+                            supabase.table("informefiscaling").insert(registros_a_subir).execute()
+                            st.success(f"✅ ¡{len(registros_a_subir)} registros NUEVOS guardados en 'informefiscaling' para {ejercicio_fiscal_ing}!")
+                            st.balloons()
+                        else:
+                            st.info("ℹ️ No se ha subido nada. Todos los datos de este PDF ya estaban en tu base de datos (0 duplicados).")
+                            
+                    except Exception as e:
+                        st.error(f"❌ Error al guardar en DB: {e}")
+
+
+
+
+
+
+
 
 
 
