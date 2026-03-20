@@ -86,7 +86,7 @@ opcion = st.sidebar.radio(
         "📊 Dividendos a Excel", 
         "🛒 Compras/Ventas a Excel", 
         "🗂️ Renombrador de PDFs",
-        "📄 Informe Fiscal (Div. y DRIPs)",
+        "📄 Extractor Informe Fiscal ING (Div. y DRIPs)",
         "🏛️ Extractor Informe Fiscal (AEAT)",
         "⚖️ Auditoría Hacienda vs ING",
         "📉 Calculadora Plusvalías (Hacienda)",
@@ -798,8 +798,8 @@ elif opcion == "🗂️ Renombrador de PDFs":
 # ==========================================
 # 🚀 APLICACIÓN 4: INFORME FISCAL (DIVIDENDOS Y DRIPS)
 # ==========================================
-elif opcion == "📄 Informe Fiscal (Div. y DRIPs)":
-    st.title("📄 Extractor Total del Informe Fiscal")
+elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
+    st.title("📄 Extractor Total del Informe Fiscal (ING)")
     st.write("Sube tu **Informe Fiscal Anual de ING** en PDF para extraer de golpe **todos los Dividendos** y **DRIPs**.")
     archivos_pdf_inf = st.file_uploader("Sube tu PDF de Datos Fiscales aquí", type=["pdf"], accept_multiple_files=True, key="inf")
 
