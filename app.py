@@ -2015,6 +2015,15 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     st.warning(f"⚠️ No se pudo cargar la tabla de Empresas: {e}")
                     map_isin, map_hac, map_ing, map_name_to_isin = {}, {}, {}, {}
 
+                # -------------------------------------------------------------
+                # 🚨 DICCIONARIO DE SCRIP DIVIDENDS (DERECHOS TEMPORALES)
+                # -------------------------------------------------------------
+                map_scrip_dividends = {
+                    "ES06670509O8": "ES0167050915", # ACS
+                    "ES06670509P5": "ES0167050915", # ACS
+                    "ES06445809S7": "ES0144580Y14"  # Iberdrola
+                }
+
                 # 3️⃣ ENRIQUECEMOS EL DATAFRAME (MAGIA EN VIVO PARA LA VISTA PREVIA)
                 def enriquecer_fila(row):
                     raw_codigo = str(row.get(col_codigo, "")).strip() if col_codigo else ""
@@ -2026,10 +2035,10 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                     codigo_upper = raw_codigo.upper()
                     emisor_upper = raw_emisor.upper()
                     
-                    # 🧹 LIMPIADOR DE RUIDO CORPORATIVO (Para arreglar el caso "Sabadell")
+                    # 🧹 LIMPIADOR DE RUIDO CORPORATIVO (Arranca comas y S.A. para Sabadell)
                     def limpiar_ruido(texto):
                         t = texto
-                        ruidos = [", S.A.", " S.A.", " S.A", ", S.L.", " S.L.", " S.L", " INC.", " INC", " CORP.", " CORP", " PLC", " N.V."]
+                        ruidos = [", S.A.", " S.A.", " S.A", ", S.L.", " S.L.", " S.L", " INC.", " INC", " CORP.", " CORP", " PLC", " N.V.", ","]
                         for r in ruidos:
                             t = t.replace(r, "")
                         t = t.replace("BANCO DE ", "BANCO ")
@@ -2048,25 +2057,34 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                                 nombre_traducido = map_ing[n_ing]
                                 break
 
-                    # B. 🎯 CAZADOR DE ISIN (El Francotirador Regex)
+                    # B. 🎯 CAZADOR DE ISIN (El Francotirador Ampliado)
                     isin_encontrado = ""
-                    # Busca cualquier bloque de 2 letras y 10 alfanuméricos en CUALQUIER lugar de la celda
-                    match_isin = re.search(r"([A-Z]{2}[A-Z0-9]{10})", codigo_upper)
+                    
+                    # UNIMOS CÓDIGO Y NOMBRE PARA ESCANEAR LOS DOS SITIOS A LA VEZ
+                    texto_combinado = f"{codigo_upper} {emisor_upper}"
+                    
+                    match_isin = re.search(r"([A-Z]{2}[A-Z0-9]{10})", texto_combinado)
                     
                     if match_isin:
-                        isin_encontrado = match_isin.group(1) # Extrae el ISIN puro sin importar la basura de alrededor
+                        isin_encontrado = match_isin.group(1)
+                        # Transformamos los ISIN falsos de Scrip Dividend en los ISIN reales
+                        if isin_encontrado in map_scrip_dividends:
+                            isin_encontrado = map_scrip_dividends[isin_encontrado]
                     else:
-                        # Si no hay ISIN camuflado, buscamos en el diccionario con el nombre limpio
+                        # Si la regex no caza nada, tiramos del nombre limpio contra la base de datos
                         if emisor_upper in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_upper]
                         elif emisor_limpio in map_name_to_isin: isin_encontrado = map_name_to_isin[emisor_limpio]
                         elif nombre_traducido.upper() in map_name_to_isin: isin_encontrado = map_name_to_isin[nombre_traducido.upper()]
                         else:
-                            # Búsqueda difusa definitiva
                             for n_db, i_db in map_name_to_isin.items():
                                 if n_db in emisor_upper or n_db in emisor_limpio:
                                     isin_encontrado = i_db
                                     break
                     
+                    # Si el nombre traducido sigue siendo el feo, pero tenemos el ISIN real, lo traducimos al nombre oficial
+                    if isin_encontrado in map_isin and nombre_traducido == raw_emisor:
+                        nombre_traducido = map_isin[isin_encontrado]
+
                     return pd.Series([isin_encontrado, nombre_traducido])
 
                 # Aplicamos la función y creamos las dos columnas nuevas
@@ -2159,6 +2177,11 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
                             st.error(f"❌ Error al comunicar con Supabase: {e}")
             except Exception as e:
                 st.error(f"❌ Error procesando el archivo: {e}")
+
+
+
+
+
 
 
 
