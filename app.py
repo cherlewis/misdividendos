@@ -1719,6 +1719,7 @@ elif opcion == "💸 Asistente de Renta Web":
 # ==========================================
 # 🚀 APLICACIÓN 9: AUDITORÍA PRO (DB)
 # ==========================================
+# ==========================================
 # 🚀 APLICACIÓN: AUDITORÍA PRO (DB)
 # ==========================================
 elif opcion == "⚖️ Auditoría Pro (DB)":
@@ -1882,8 +1883,13 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
                     col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
                     
-                    # Nuestra nueva métrica estrella
-                    col4.metric("Bruto Total (Consolidado)", f"{tot_bruto_consolidado:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
+                    # Nuestra nueva métrica estrella con el texto actualizado
+                    texto_consolidado = f"{tot_bruto_consolidado:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                    col4.metric(
+                        "Bruto Consolidado (Casillas 29 y 36)", 
+                        texto_consolidado, 
+                        help="Este es el valor total y real de tus dividendos que debes introducir en las Casillas 29 y 36 de tu Declaración de la Renta."
+                    )
 
                     st.markdown("### 🔍 Detalle Dividendo a Dividendo")
                     
@@ -1909,6 +1915,8 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
+
+
 
 
 
