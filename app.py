@@ -1719,9 +1719,11 @@ elif opcion == "💸 Asistente de Renta Web":
 # ==========================================
 # 🚀 APLICACIÓN 9: AUDITORÍA PRO (DB)
 # ==========================================
+# 🚀 APLICACIÓN: AUDITORÍA PRO (DB)
+# ==========================================
 elif opcion == "⚖️ Auditoría Pro (DB)":
     st.title("⚖️ Auditoría Pro (Base de Datos)")
-    st.write("Cruza los datos directamente desde Supabase, dividendo a dividendo (1 a 1).")
+    st.write("Cruza los datos directamente desde Supabase, dividendo a dividendo (1 a 1). El sistema usa la columna ISIN oficial de ambas tablas para un emparejamiento perfecto.")
 
     from datetime import datetime
     import pandas as pd
@@ -1734,85 +1736,82 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
         value=anio_fiscal_defecto
     )
 
-    ver_rayos_x = st.checkbox("🐛 Modo Rayos X: Ver datos crudos de Supabase (Para depurar)")
-
     st.markdown("---")
 
     if st.button("🔍 Iniciar Auditoría Pro (1 a 1)", type="primary", use_container_width=True):
-        with st.spinner(f"Descargando y emparejando dividendos del año {ejercicio_auditar}..."):
+        with st.spinner(f"Descargando y emparejando dividendos 1 a 1 del año {ejercicio_auditar}..."):
             try:
                 from supabase import create_client, Client
                 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-                # 1️⃣ DESCARGA PURA Y DURA
-                res_ing = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
-                res_aeat = supabase.table("informefiscalaeat").select("id, isin, codigo_emisor, nombre_emisor, importe_integro, retenciones").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
-
-                # 🐛 VISOR DE RAYOS X (Te mostrará la verdad absoluta)
-                if ver_rayos_x:
-                    st.warning("⚠️ **DATOS CRUDOS RECIBIDOS DE SUPABASE (SIN FILTROS):**")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write("📥 **HACIENDA (AEAT)**")
-                        df_aeat_raw = pd.DataFrame(res_aeat.data) if res_aeat.data else pd.DataFrame()
-                        st.dataframe(df_aeat_raw)
-                    with col2:
-                        st.write("🟠 **ING**")
-                        df_ing_raw = pd.DataFrame(res_ing.data) if res_ing.data else pd.DataFrame()
-                        st.dataframe(df_ing_raw)
-                    st.markdown("---")
+                # 1️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA (Ahora pedimos también 'clave' y 'concepto')
+                res_ing = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino, concepto").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
+                res_aeat = supabase.table("informefiscalaeat").select("id, isin, codigo_emisor, nombre_emisor, importe_integro, retenciones, clave").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
 
                 if not res_ing.data and not res_aeat.data:
                     st.warning(f"🤷‍♂️ No hay datos guardados en ninguna de las dos tablas para el año {ejercicio_auditar}.")
                 else:
-                    # 2️⃣ LISTAS (Limpieza de espacios fantasmas)
+                    # 2️⃣ PREPARAR LISTA DE ING (CON LIMPIEZA EXTREMA)
                     ing_list = []
                     if res_ing.data:
                         for row in res_ing.data:
+                            # 🧹 Arrancamos cualquier espacio invisible
                             isin_limpio = str(row.get("isin", "")).replace('\xa0', '').replace(' ', '').strip().upper()
+                            
                             ing_list.append({
                                 "id": row["id"],
                                 "isin": isin_limpio,
                                 "empresa": str(row.get("empresa", "")).strip(),
+                                "concepto": str(row.get("concepto", "")).strip(),
                                 "bruto": round(float(row.get("importe_bruto", 0)), 2),
                                 "ret": round(float(row.get("retencion_destino", 0)), 2),
                                 "comprobado": False  
                             })
 
+                    # 3️⃣ PREPARAR LISTA DE HACIENDA (CON LIMPIEZA EXTREMA)
                     aeat_list = []
                     if res_aeat.data:
                         for row in res_aeat.data:
+                            # 🧹 Arrancamos cualquier espacio invisible
                             isin_limpio = str(row.get("isin", "")).replace('\xa0', '').replace(' ', '').strip().upper()
+                            
                             aeat_list.append({
                                 "id": row["id"],
                                 "isin": isin_limpio,
                                 "empresa": str(row.get("nombre_emisor", "")).strip(),
+                                "clave": str(row.get("clave", "")).strip(),
                                 "bruto": round(float(row.get("importe_integro", 0)), 2),
                                 "ret": round(float(row.get("retenciones", 0)), 2),
                                 "comprobado": False 
                             })
 
-                    # 3️⃣ CRUCE MATEMÁTICO PURO
+                    # 4️⃣ ALGORITMO DE EMPAREJAMIENTO (CARA A CARA 1 a 1)
                     resultados = []
 
+                    # A. Buscamos pareja para los de ING
                     for div_ing in ing_list:
                         if div_ing["comprobado"]: continue
                         
                         mejor_pareja = None
                         for div_aeat in aeat_list:
+                            # Tienen que compartir el ISIN limpio y tener el mismo importe (+- 2 céntimos)
                             if not div_aeat["comprobado"]:
                                 if div_ing["isin"] and div_aeat["isin"] == div_ing["isin"] and abs(div_aeat["bruto"] - div_ing["bruto"]) <= 0.02:
                                     mejor_pareja = div_aeat
                                     break 
                         
                         if mejor_pareja:
+                            # MARCADOS COMO COMPROBADOS PARA NO REPETIRSE
                             div_ing["comprobado"] = True
                             mejor_pareja["comprobado"] = True
+                            
                             dif_b = div_ing["bruto"] - mejor_pareja["bruto"]
                             dif_r = div_ing["ret"] - mejor_pareja["ret"]
+                            estado = "✅ Ok" if abs(dif_r) <= 0.05 else "⚠️ Descuadre Ret."
                             
                             resultados.append({
-                                "Estado": "✅ Ok" if abs(dif_r) <= 0.05 else "⚠️ Descuadre Ret.",
+                                "Estado": estado,
+                                "Concepto": mejor_pareja["clave"] if mejor_pareja["clave"] else div_ing["concepto"],
                                 "ISIN": div_ing["isin"],
                                 "Empresa": div_ing["empresa"] if div_ing["empresa"] else mejor_pareja["empresa"],
                                 "Bruto_ING": div_ing["bruto"],
@@ -1823,8 +1822,10 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Dif_Ret": dif_r
                             })
                         else:
+                            # Huérfano de ING (como no está en AEAT, ponemos el concepto de ING)
                             resultados.append({
                                 "Estado": "❌ Falta en AEAT",
+                                "Concepto": div_ing["concepto"],
                                 "ISIN": div_ing["isin"],
                                 "Empresa": div_ing["empresa"],
                                 "Bruto_ING": div_ing["bruto"],
@@ -1835,10 +1836,12 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Dif_Ret": div_ing["ret"]
                             })
 
+                    # B. Miramos los huérfanos de Hacienda
                     for div_aeat in aeat_list:
                         if not div_aeat["comprobado"]:
                             resultados.append({
                                 "Estado": "❌ Falta en ING",
+                                "Concepto": div_aeat["clave"],
                                 "ISIN": div_aeat["isin"],
                                 "Empresa": div_aeat["empresa"],
                                 "Bruto_ING": 0.0,
@@ -1849,12 +1852,27 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Dif_Ret": -div_aeat["ret"]
                             })
 
-                    # 4️⃣ RENDERIZADO VISUAL
+                    # 5️⃣ RENDERIZADO VISUAL
                     df_cruce = pd.DataFrame(resultados)
+                    # Ordenar para que los errores salgan arriba
                     df_cruce = df_cruce.sort_values(by=["Estado", "Empresa"], ascending=[False, True])
 
                     st.subheader("🎯 Resumen del Cruce Fiscal 1 a 1")
                     
+                    tot_bruto_ing = df_cruce["Bruto_ING"].sum()
+                    tot_bruto_aeat = df_cruce["Bruto_AEAT"].sum()
+                    dif_global_bruto = tot_bruto_ing - tot_bruto_aeat
+
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Bruto Total (ING)", f"{tot_bruto_ing:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
+                    col2.metric("Bruto Total (AEAT)", f"{tot_bruto_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
+                    
+                    color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
+                    col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
+
+                    st.markdown("### 🔍 Detalle Dividendo a Dividendo")
+                    
+                    # Estilos para ver en rojo los descuadres
                     df_mostrar = df_cruce.style.format({
                         "Bruto_ING": "{:.2f} €", "Bruto_AEAT": "{:.2f} €", "Dif_Bruto": "{:.2f} €",
                         "Ret_ING": "{:.2f} €", "Ret_AEAT": "{:.2f} €", "Dif_Ret": "{:.2f} €"
@@ -1864,6 +1882,15 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     )
                     
                     st.dataframe(df_mostrar, use_container_width=True, height=600)
+
+                    # Botón de Descarga
+                    csv_cruce = df_cruce.to_csv(index=False, sep=";").encode('utf-8-sig')
+                    st.download_button(
+                        label="⬇️ Descargar Auditoría (CSV)", 
+                        data=csv_cruce, 
+                        file_name=f"Auditoria_Pro_1a1_{ejercicio_auditar}.csv", 
+                        mime='text/csv'
+                    )
 
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
