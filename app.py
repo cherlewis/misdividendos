@@ -814,15 +814,25 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
     
     archivos_pdf_inf = st.file_uploader("Sube tu PDF de Datos Fiscales de ING aquí", type=["pdf"], accept_multiple_files=True, key="inf_ing")
 
-    # Función para asignar banderas/países
+    # -------------------------------------------------------------
+    # 🇫🇷 FUNCIÓN DE PAÍSES ACTUALIZADA (¡Con L'Oréal y empresas francesas!)
+    # -------------------------------------------------------------
     def obtener_bandera(isin, empresa):
+        # 1. Por ISIN (Método más seguro)
         if isinstance(isin, str) and len(isin) >= 2 and isin != "ISIN no encontrado":
             prefijo = isin[:2].upper()
             banderas = {"ES": "España", "US": "USA", "DE": "Alemania", "FR": "Francia", "NL": "Países Bajos", "GB": "Reino Unido"}
             if prefijo in banderas: return banderas[prefijo]
-        if " INC" in str(empresa).upper() or " CORP" in str(empresa).upper(): return "USA"
-        if " NV" in str(empresa).upper(): return "Países Bajos"
-        if " PLC" in str(empresa).upper(): return "Reino Unido"
+            
+        # 2. Por Nombre / Sufijo (Si falla el ISIN)
+        empresa_upper = str(empresa).upper()
+        if " INC" in empresa_upper or " CORP" in empresa_upper: return "USA"
+        if " NV" in empresa_upper: return "Países Bajos"
+        if " PLC" in empresa_upper: return "Reino Unido"
+        if "L'OREAL" in empresa_upper or "LOREAL" in empresa_upper: return "Francia"
+        if "LVMH" in empresa_upper or "LOUIS VUITTON" in empresa_upper: return "Francia"
+        if "DANONE" in empresa_upper or "SANOFI" in empresa_upper: return "Francia"
+        
         return "Desconocido"
 
     if archivos_pdf_inf:
@@ -927,7 +937,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                         recuperable = round(min(ret_ori_num, maximo_recuperable), 2)
 
                                     datos_informe.append({
-                                        "fecha_abono": f"31/12/{ejercicio_fiscal_ing}", # Fecha genérica ya que ING agrupa en el informe
+                                        "fecha_abono": f"31/12/{ejercicio_fiscal_ing}",
                                         "isin": isin_encontrado,
                                         "concepto": "DIVIDENDO",
                                         "importe_neto": round(neto_num, 2),
@@ -939,7 +949,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                         "empresa": empresa_full,
                                         "pais": obtener_bandera(isin_encontrado, empresa_full),
                                         "cuenta_valores": "",
-                                        "numero_titulos": 0.0, # 0 porque ING no especifica títulos en este bloque
+                                        "numero_titulos": 0.0, 
                                         "cuenta_abono": "",
                                         "retencion_recuperable": recuperable
                                     })
@@ -953,65 +963,77 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
 
             st.info("💡 **Filtro Anti-Duplicados Activado:** El sistema identificará operaciones repetidas comparando el ISIN y el Importe Bruto.")
 
-            if st.button("☁️ Subir a Base de Datos (informefiscaling)", type="primary", use_container_width=True):
-                with st.spinner("Comprobando duplicados y guardando en Supabase..."):
-                    try:
-                        from supabase import create_client, Client
-                        supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-                        
-                        # 1️⃣ Traer existentes para HUELLA DIGITAL (compara como entero)
-                        res_db = supabase.table("informefiscaling").select("isin, importe_bruto").eq("ejercicio_fiscal", int(ejercicio_fiscal_ing)).execute()
-                        
-                        db_existentes = []
-                        if res_db.data:
-                            for row_db in res_db.data:
-                                isin_db = str(row_db.get("isin", "")).strip()
-                                imp_db = round(float(row_db.get("importe_bruto", 0)), 2)
-                                firma = f"{isin_db}_{imp_db}"
-                                db_existentes.append(firma) # Usamos Lista para permitir duplicados legítimos
-                        
-                        registros_a_subir = []
-                        for _, row in df_ing.iterrows():
-                            isin_excel = str(row["isin"]).strip()
-                            imp_excel = round(float(row["importe_bruto"]), 2)
-                            firma_actual = f"{isin_excel}_{imp_excel}"
+            col_excel, col_db = st.columns(2)
+            
+            with col_excel:
+                csv_ing = df_ing.to_csv(index=False, sep=";").encode('utf-8-sig')
+                st.download_button(
+                    label="⬇️ Descargar Excel (ING)", 
+                    data=csv_ing, 
+                    file_name=f"Informe_ING_{ejercicio_fiscal_ing}.csv", 
+                    mime='text/csv', 
+                    use_container_width=True
+                )
+
+            with col_db:
+                if st.button("☁️ Subir a Base de Datos (informefiscaling)", type="primary", use_container_width=True):
+                    with st.spinner("Comprobando duplicados y guardando en Supabase..."):
+                        try:
+                            from supabase import create_client, Client
+                            supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
                             
-                            # 🛡️ Comprobación de duplicados
-                            if firma_actual in db_existentes:
-                                # Tachamos uno de la lista si ya existe, por si hay otro igual
-                                db_existentes.remove(firma_actual)
+                            res_db = supabase.table("informefiscaling").select("isin, importe_bruto").eq("ejercicio_fiscal", int(ejercicio_fiscal_ing)).execute()
+                            
+                            db_existentes = []
+                            if res_db.data:
+                                for row_db in res_db.data:
+                                    isin_db = str(row_db.get("isin", "")).strip()
+                                    imp_db = round(float(row_db.get("importe_bruto", 0)), 2)
+                                    firma = f"{isin_db}_{imp_db}"
+                                    db_existentes.append(firma) 
+                            
+                            registros_a_subir = []
+                            for _, row in df_ing.iterrows():
+                                isin_excel = str(row["isin"]).strip()
+                                imp_excel = round(float(row["importe_bruto"]), 2)
+                                firma_actual = f"{isin_excel}_{imp_excel}"
+                                
+                                if firma_actual in db_existentes:
+                                    db_existentes.remove(firma_actual)
+                                else:
+                                    registro = {
+                                        "fecha_abono": str(row["fecha_abono"]),
+                                        "isin": isin_excel[:50],
+                                        "concepto": str(row["concepto"])[:100],
+                                        "importe_neto": float(row["importe_neto"]),
+                                        "retencion_origen": float(row["retencion_origen"]),
+                                        "porcentaje_retencion_origen": float(row["porcentaje_retencion_origen"]),
+                                        "retencion_destino": float(row["retencion_destino"]),
+                                        "porcentaje_retencion_destino": float(row["porcentaje_retencion_destino"]),
+                                        "importe_bruto": float(row["importe_bruto"]),
+                                        "empresa": str(row["empresa"])[:250],
+                                        "pais": str(row["pais"])[:100],
+                                        "cuenta_valores": str(row["cuenta_valores"]),
+                                        "numero_titulos": float(row["numero_titulos"]),
+                                        "cuenta_abono": str(row["cuenta_abono"]),
+                                        "retencion_recuperable": float(row["retencion_recuperable"]),
+                                        "ejercicio_fiscal": int(ejercicio_fiscal_ing) 
+                                    }
+                                    registros_a_subir.append(registro)
+                                    db_existentes.append(firma_actual)
+                            
+                            if registros_a_subir:
+                                supabase.table("informefiscaling").insert(registros_a_subir).execute()
+                                st.success(f"✅ ¡{len(registros_a_subir)} registros NUEVOS guardados en 'informefiscaling' para {ejercicio_fiscal_ing}!")
+                                st.balloons()
                             else:
-                                registro = {
-                                    "fecha_abono": str(row["fecha_abono"]),
-                                    "isin": isin_excel[:50],
-                                    "concepto": str(row["concepto"])[:100],
-                                    "importe_neto": float(row["importe_neto"]),
-                                    "retencion_origen": float(row["retencion_origen"]),
-                                    "porcentaje_retencion_origen": float(row["porcentaje_retencion_origen"]),
-                                    "retencion_destino": float(row["retencion_destino"]),
-                                    "porcentaje_retencion_destino": float(row["porcentaje_retencion_destino"]),
-                                    "importe_bruto": float(row["importe_bruto"]),
-                                    "empresa": str(row["empresa"])[:250],
-                                    "pais": str(row["pais"])[:100],
-                                    "cuenta_valores": str(row["cuenta_valores"]),
-                                    "numero_titulos": float(row["numero_titulos"]),
-                                    "cuenta_abono": str(row["cuenta_abono"]),
-                                    "retencion_recuperable": float(row["retencion_recuperable"]),
-                                    "ejercicio_fiscal": int(ejercicio_fiscal_ing) # 🎯 ¡AHORA ES INTEGER!
-                                }
-                                registros_a_subir.append(registro)
-                                # Añadimos a la lista de existentes por si el PDF trae el mismo dividendo repetido en otra línea
-                                db_existentes.append(firma_actual)
-                        
-                        if registros_a_subir:
-                            supabase.table("informefiscaling").insert(registros_a_subir).execute()
-                            st.success(f"✅ ¡{len(registros_a_subir)} registros NUEVOS guardados en 'informefiscaling' para {ejercicio_fiscal_ing}!")
-                            st.balloons()
-                        else:
-                            st.info("ℹ️ No se ha subido nada. Todos los datos de este PDF ya estaban en tu base de datos (0 duplicados).")
-                            
-                    except Exception as e:
-                        st.error(f"❌ Error al guardar en DB: {e}")
+                                st.info("ℹ️ No se ha subido nada. Todos los datos de este PDF ya estaban en tu base de datos (0 duplicados).")
+                                
+                        except Exception as e:
+                            st.error(f"❌ Error al guardar en DB: {e}")
+
+
+
 
 
 
