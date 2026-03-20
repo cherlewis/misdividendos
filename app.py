@@ -1721,7 +1721,7 @@ elif opcion == "💸 Asistente de Renta Web":
 # ==========================================
 elif opcion == "⚖️ Auditoría Pro (DB)":
     st.title("⚖️ Auditoría Pro (Base de Datos)")
-    st.write("Cruza los datos directamente desde Supabase, dividendo a dividendo (1 a 1). El sistema usa tu tabla de Empresas para obtener los ISINs correctos y empareja operaciones idénticas marcándolas para no duplicarlas.")
+    st.write("Cruza los datos directamente desde Supabase, dividendo a dividendo (1 a 1). El sistema prioriza el ISIN oficial de Hacienda, usa tu tabla de Empresas como respaldo inteligente y empareja operaciones idénticas marcándolas para no duplicarlas.")
 
     from datetime import datetime
     anio_fiscal_defecto = datetime.now().year - 1
@@ -1749,11 +1749,13 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                 if res_empresas.data:
                     for e in res_empresas.data:
                         isin_oficial = str(e.get("ISIN", "")).strip().upper()
+                        # 🛡️ Escudo Anti-Vacíos: Solo guardamos si hay un ISIN real
                         if isin_oficial:
-                            if e.get("NombreHacienda"):
-                                map_hac_to_isin[str(e["NombreHacienda"]).strip().upper()] = isin_oficial
-                            if e.get("NombreING"):
-                                map_ing_to_isin[str(e["NombreING"]).strip().upper()] = isin_oficial
+                            nom_hac = str(e.get("NombreHacienda", "")).strip().upper()
+                            nom_ing = str(e.get("NombreING", "")).strip().upper()
+                            
+                            if nom_hac: map_hac_to_isin[nom_hac] = isin_oficial
+                            if nom_ing: map_ing_to_isin[nom_ing] = isin_oficial
 
                 # 2️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA
                 res_ing = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
@@ -1762,7 +1764,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                 if not res_ing.data and not res_aeat.data:
                     st.warning(f"🤷‍♂️ No hay datos guardados en ninguna de las dos tablas para el año {ejercicio_auditar}.")
                 else:
-                    # 3️⃣ PREPARAR LISTA DE ING (Añadiendo el flag "comprobado")
+                    # 3️⃣ PREPARAR LISTA DE ING
                     ing_list = []
                     if res_ing.data:
                         for row in res_ing.data:
@@ -1772,23 +1774,32 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "empresa": row.get("empresa", ""),
                                 "bruto": round(float(row.get("importe_bruto", 0)), 2),
                                 "ret": round(float(row.get("retencion_destino", 0)), 2),
-                                "comprobado": False  # 🛡️ Flag anti-reutilización
+                                "comprobado": False  
                             })
 
-                    # 4️⃣ PREPARAR LISTA DE HACIENDA Y BUSCAR SUS ISIN REALES
+                    # 4️⃣ PREPARAR LISTA DE HACIENDA (EL CEREBRO MEJORADO)
                     aeat_list = []
                     if res_aeat.data:
+                        import re # Expresiones regulares para detectar ISINs
                         for row in res_aeat.data:
                             nom = str(row.get("nombre_emisor", "")).strip().upper()
                             cod = str(row.get("codigo_emisor", "")).strip().upper()
+                            cod_limpio = cod.replace("CODIGO:", "").strip()
                             
-                            # Magia para sacar el ISIN desde la tabla Empresas
                             isin_resuelto = ""
-                            if nom in map_hac_to_isin: isin_resuelto = map_hac_to_isin[nom]
-                            elif cod in map_hac_to_isin: isin_resuelto = map_hac_to_isin[cod]
-                            elif nom in map_ing_to_isin: isin_resuelto = map_ing_to_isin[nom]
-                            elif cod in map_ing_to_isin: isin_resuelto = map_ing_to_isin[cod]
-                            else: isin_resuelto = cod.replace("CODIGO:", "").strip() # Plan B extremo
+                            
+                            # 🎯 Prioridad Absoluta 1: ¿Hacienda ya nos ha dado el ISIN perfecto en el código? (Ej: FR0000121014)
+                            if re.match(r"^[A-Z]{2}[A-Z0-9]{10}$", cod_limpio):
+                                isin_resuelto = cod_limpio
+                            else:
+                                # 🎯 Prioridad 2: Buscar en la base de datos (con escudo anti-vacíos)
+                                if nom and nom in map_hac_to_isin: isin_resuelto = map_hac_to_isin[nom]
+                                elif cod and cod in map_hac_to_isin: isin_resuelto = map_hac_to_isin[cod]
+                                elif cod_limpio and cod_limpio in map_hac_to_isin: isin_resuelto = map_hac_to_isin[cod_limpio]
+                                elif nom and nom in map_ing_to_isin: isin_resuelto = map_ing_to_isin[nom]
+                                elif cod and cod in map_ing_to_isin: isin_resuelto = map_ing_to_isin[cod]
+                                elif cod_limpio and cod_limpio in map_ing_to_isin: isin_resuelto = map_ing_to_isin[cod_limpio]
+                                else: isin_resuelto = cod_limpio # Plan B final
                             
                             aeat_list.append({
                                 "id": row["id"],
@@ -1796,7 +1807,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "empresa": row.get("nombre_emisor", ""),
                                 "bruto": round(float(row.get("importe_integro", 0)), 2),
                                 "ret": round(float(row.get("retenciones", 0)), 2),
-                                "comprobado": False # 🛡️ Flag anti-reutilización
+                                "comprobado": False 
                             })
 
                     # 5️⃣ ALGORITMO DE EMPAREJAMIENTO (CARA A CARA 1 a 1)
@@ -1808,14 +1819,14 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                         
                         mejor_pareja = None
                         for div_aeat in aeat_list:
-                            # Si Hacienda no está comprobado, coincide el ISIN y el importe es idéntico (+- 2 cents de redondeo)
+                            # Tienen que compartir ISIN (y no estar vacío) y tener el mismo importe (+- 2 céntimos)
                             if not div_aeat["comprobado"]:
-                                if div_aeat["isin"] == div_ing["isin"] and abs(div_aeat["bruto"] - div_ing["bruto"]) <= 0.02:
+                                if div_ing["isin"] and div_aeat["isin"] == div_ing["isin"] and abs(div_aeat["bruto"] - div_ing["bruto"]) <= 0.02:
                                     mejor_pareja = div_aeat
-                                    break # 🛑 PARALIZAMOS: Ya encontramos su pareja ideal, no miramos más.
+                                    break 
                         
                         if mejor_pareja:
-                            # LOS MARCAMOS COMO COMPROBADOS PARA QUE NO SE REUTILICEN
+                            # MARCADOS COMO COMPROBADOS PARA NO REPETIRSE
                             div_ing["comprobado"] = True
                             mejor_pareja["comprobado"] = True
                             
@@ -1826,7 +1837,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                             resultados.append({
                                 "Estado": estado,
                                 "ISIN": div_ing["isin"],
-                                "Empresa": div_ing["empresa"],
+                                "Empresa": div_ing["empresa"] if div_ing["empresa"] else mejor_pareja["empresa"],
                                 "Bruto_ING": div_ing["bruto"],
                                 "Bruto_AEAT": mejor_pareja["bruto"],
                                 "Dif_Bruto": dif_b,
@@ -1835,7 +1846,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Dif_Ret": dif_r
                             })
                         else:
-                            # Si ING no encuentra pareja, se queda huérfano
+                            # Huérfano de ING
                             resultados.append({
                                 "Estado": "❌ Falta en AEAT",
                                 "ISIN": div_ing["isin"],
@@ -1848,7 +1859,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Dif_Ret": div_ing["ret"]
                             })
 
-                    # B. Miramos los huérfanos de Hacienda (los que no han sido marcados)
+                    # B. Miramos los huérfanos de Hacienda
                     for div_aeat in aeat_list:
                         if not div_aeat["comprobado"]:
                             resultados.append({
@@ -1865,7 +1876,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
                     # 6️⃣ RENDERIZADO VISUAL
                     df_cruce = pd.DataFrame(resultados)
-                    # Ordenar para que los errores salgan arriba
                     df_cruce = df_cruce.sort_values(by=["Estado", "Empresa"], ascending=[False, True])
 
                     st.subheader("🎯 Resumen del Cruce Fiscal 1 a 1")
