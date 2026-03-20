@@ -1756,7 +1756,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     ing_list = []
                     if res_ing.data:
                         for row in res_ing.data:
-                            # 🧹 Arrancamos cualquier espacio invisible
                             isin_limpio = str(row.get("isin", "")).replace('\xa0', '').replace(' ', '').strip().upper()
                             
                             ing_list.append({
@@ -1773,7 +1772,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     aeat_list = []
                     if res_aeat.data:
                         for row in res_aeat.data:
-                            # 🧹 Arrancamos cualquier espacio invisible
                             isin_limpio = str(row.get("isin", "")).replace('\xa0', '').replace(' ', '').strip().upper()
                             
                             aeat_list.append({
@@ -1795,14 +1793,12 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                         
                         mejor_pareja = None
                         for div_aeat in aeat_list:
-                            # Tienen que compartir el ISIN limpio y tener el mismo importe (+- 2 céntimos)
                             if not div_aeat["comprobado"]:
                                 if div_ing["isin"] and div_aeat["isin"] == div_ing["isin"] and abs(div_aeat["bruto"] - div_ing["bruto"]) <= 0.02:
                                     mejor_pareja = div_aeat
                                     break 
                         
                         if mejor_pareja:
-                            # MARCADOS COMO COMPROBADOS PARA NO REPETIRSE
                             div_ing["comprobado"] = True
                             mejor_pareja["comprobado"] = True
                             
@@ -1823,7 +1819,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Dif_Ret": dif_r
                             })
                         else:
-                            # Huérfano de ING
                             resultados.append({
                                 "Estado": "❌ Falta en AEAT",
                                 "Concepto": div_ing["concepto"],
@@ -1855,7 +1850,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
                     # 5️⃣ RENDERIZADO VISUAL
                     df_cruce = pd.DataFrame(resultados)
-                    # Ordenar para que los errores salgan arriba
                     df_cruce = df_cruce.sort_values(by=["Estado", "Empresa"], ascending=[False, True])
 
                     st.subheader("🎯 Resumen del Cruce Fiscal 1 a 1")
@@ -1869,31 +1863,40 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     tot_bruto_consolidado = 0.0
                     for _, row in df_cruce.iterrows():
                         if "Falta en" in row["Estado"]:
-                            # Sumamos el que sea distinto de 0
                             tot_bruto_consolidado += row["Bruto_ING"] if row["Bruto_ING"] != 0 else row["Bruto_AEAT"]
                         else:
-                            # Si es OK o Descuadre Ret, sumamos solo el de ING
                             tot_bruto_consolidado += row["Bruto_ING"]
 
-                    # --- RENDERIZADO DE LAS 4 CAJITAS ---
-                    col1, col2, col3, col4 = st.columns(4)
+                    # 🚀 NUEVO CÁLCULO: Lo que falta añadir a la declaración
+                    tot_bruto_añadir_aeat = df_cruce[df_cruce["Estado"] == "❌ Falta en AEAT"]["Bruto_ING"].sum()
+
+                    # --- RENDERIZADO DE LAS CAJITAS (2 FILAS) ---
+                    col1, col2, col3 = st.columns(3)
                     col1.metric("Bruto Total (ING)", f"{tot_bruto_ing:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
                     col2.metric("Bruto Total (AEAT)", f"{tot_bruto_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
                     
                     color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
                     col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
                     
-                    # Nuestra nueva métrica estrella con el texto actualizado
+                    st.markdown("<br>", unsafe_allow_html=True) # Pequeño salto de línea para separar
+                    
+                    col4, col5 = st.columns(2)
                     texto_consolidado = f"{tot_bruto_consolidado:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
                     col4.metric(
                         "Bruto Consolidado (Casillas 29 y 36)", 
                         texto_consolidado, 
                         help="Este es el valor total y real de tus dividendos que debes introducir en las Casillas 29 y 36 de tu Declaración de la Renta."
                     )
+                    
+                    texto_añadir = f"{tot_bruto_añadir_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                    col5.metric(
+                        "Bruto a añadir a la declaración", 
+                        texto_añadir, 
+                        help="Dinero que has cobrado según el banco pero que Hacienda no sabe. Tienes que añadirlo en tu borrador."
+                    )
 
                     st.markdown("### 🔍 Detalle Dividendo a Dividendo")
                     
-                    # Estilos para ver en rojo los descuadres
                     df_mostrar = df_cruce.style.format({
                         "Bruto_ING": "{:.2f} €", "Bruto_AEAT": "{:.2f} €", "Dif_Bruto": "{:.2f} €",
                         "Ret_ING": "{:.2f} €", "Ret_AEAT": "{:.2f} €", "Dif_Ret": "{:.2f} €"
