@@ -794,6 +794,8 @@ elif opcion == "🗂️ Renombrador de PDFs":
 
 
 
+
+
 # ==========================================
 # 🚀 APLICACIÓN 4: EXTRACTOR INFORME FISCAL ING
 # ==========================================
@@ -802,6 +804,9 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
     st.write("Sube el PDF de Información Fiscal de ING. Extraeremos DRIPs, Dividendos y los enviaremos a tu base de datos.")
 
     from datetime import datetime
+    import pandas as pd
+    import re
+    
     anio_fiscal_defecto = datetime.now().year - 1
 
     ejercicio_fiscal_ing = st.number_input(
@@ -895,6 +900,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                                     break
 
                                     bruto_num = euro_a_numero(importe)
+                                    pais_origen = obtener_bandera(isin_encontrado, empresa_full)
 
                                     datos_informe.append({
                                         "fecha_abono": fecha,
@@ -907,7 +913,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                         "porcentaje_retencion_destino": 0.0,
                                         "importe_bruto": bruto_num,
                                         "empresa": empresa_full,
-                                        "pais": obtener_bandera(isin_encontrado, empresa_full),
+                                        "pais": pais_origen,
                                         "cuenta_valores": "",
                                         "numero_titulos": float(titulos) if titulos.isdigit() else 0.0,
                                         "cuenta_abono": "",
@@ -964,11 +970,22 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                     pct_ori = round((ret_ori_num / bruto_num) * 100, 2) if bruto_num > 0 else 0.0
                                     pct_des = round((ret_des_num / bruto_num) * 100, 2) if bruto_num > 0 else 0.0
                                     
-                                    # Cálculo de Retención Recuperable (Máximo 15% del Bruto por Tratado de Doble Imposición)
+                                    # Identificamos el país primero
+                                    pais_origen = obtener_bandera(isin_encontrado, empresa_full)
+                                    
+                                    # 🎯 NUEVA REGLA FISCAL INTELIGENTE PARA LA RETENCIÓN RECUPERABLE
                                     recuperable = 0.0
                                     if ret_ori_num > 0:
-                                        maximo_recuperable = bruto_num * 0.15
-                                        recuperable = round(min(ret_ori_num, maximo_recuperable), 2)
+                                        pais_limpio = pais_origen.strip().upper()
+                                        
+                                        # Si es Francia o Alemania, calculamos el máximo del 15%
+                                        if pais_limpio in ["FRANCIA", "FRANCE", "ALEMANIA", "GERMANY"]:
+                                            maximo_recuperable = bruto_num * 0.15
+                                            recuperable = round(min(ret_ori_num, maximo_recuperable), 2)
+                                        
+                                        # Para TODO EL RESTO (Holanda, USA, UK...), copiamos el valor del banco al céntimo
+                                        else:
+                                            recuperable = ret_ori_num
 
                                     datos_informe.append({
                                         "fecha_abono": f"31/12/{ejercicio_fiscal_ing}",
@@ -981,7 +998,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                         "porcentaje_retencion_destino": pct_des,
                                         "importe_bruto": round(bruto_num, 2),
                                         "empresa": empresa_full,
-                                        "pais": obtener_bandera(isin_encontrado, empresa_full),
+                                        "pais": pais_origen,
                                         "cuenta_valores": "",
                                         "numero_titulos": 0.0, 
                                         "cuenta_abono": "",
@@ -1054,7 +1071,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                         "ejercicio_fiscal": int(ejercicio_fiscal_ing) 
                                     }
                                     registros_a_subir.append(registro)
-                                    # ❌ HEMOS ELIMINADO la línea problemática aquí que bloqueaba los duplicados internos
                             
                             if registros_a_subir:
                                 supabase.table("informefiscaling").insert(registros_a_subir).execute()
@@ -1065,9 +1081,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                 
                         except Exception as e:
                             st.error(f"❌ Error al guardar en DB: {e}")
-
-
-
 
 
 
