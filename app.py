@@ -1733,7 +1733,6 @@ elif opcion == "💸 Asistente de Renta Web":
 # 🚀 APLICACIÓN 9: AUDITORÍA PRO (DB)
 # ==========================================
 # ==========================================
-# ==========================================
 # 🚀 APLICACIÓN: AUDITORÍA PRO (DB)
 # ==========================================
 elif opcion == "⚖️ Auditoría Pro (DB)":
@@ -1759,8 +1758,8 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                 from supabase import create_client, Client
                 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-                # 1️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA
-                res_ing = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino, concepto, retencion_recuperable").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
+                # 1️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA (Ahora pedimos también 'pais' de ING)
+                res_ing = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino, concepto, retencion_recuperable, pais").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
                 res_aeat = supabase.table("informefiscalaeat").select("id, isin, codigo_emisor, nombre_emisor, importe_integro, retenciones, clave").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
 
                 if not res_ing.data and not res_aeat.data:
@@ -1777,6 +1776,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "isin": isin_limpio,
                                 "empresa": str(row.get("empresa", "")).strip(),
                                 "concepto": str(row.get("concepto", "")).strip(),
+                                "pais": str(row.get("pais", "Desconocido")).strip(), # 🌍 Guardamos el país
                                 "bruto": round(float(row.get("importe_bruto", 0)), 2),
                                 "ret": round(float(row.get("retencion_destino", 0)), 2),
                                 "ret_recup": round(float(row.get("retencion_recuperable", 0)), 2), 
@@ -1825,6 +1825,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Concepto": mejor_pareja["clave"] if mejor_pareja["clave"] else div_ing["concepto"],
                                 "ISIN": div_ing["isin"],
                                 "Empresa": div_ing["empresa"] if div_ing["empresa"] else mejor_pareja["empresa"],
+                                "Pais": div_ing["pais"], # 🌍 Añadimos país a la fila
                                 "Bruto_ING": div_ing["bruto"],
                                 "Bruto_AEAT": mejor_pareja["bruto"],
                                 "Dif_Bruto": dif_b,
@@ -1839,6 +1840,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Concepto": div_ing["concepto"],
                                 "ISIN": div_ing["isin"],
                                 "Empresa": div_ing["empresa"],
+                                "Pais": div_ing["pais"], # 🌍 Añadimos país a la fila
                                 "Bruto_ING": div_ing["bruto"],
                                 "Bruto_AEAT": 0.0,
                                 "Dif_Bruto": div_ing["bruto"],
@@ -1855,6 +1857,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Concepto": div_aeat["clave"],
                                 "ISIN": div_aeat["isin"],
                                 "Empresa": div_aeat["empresa"],
+                                "Pais": "España", # Por defecto, si falta en ING asumimos que es algo nacional (aunque el bruto ING será 0)
                                 "Bruto_ING": 0.0,
                                 "Bruto_AEAT": div_aeat["bruto"],
                                 "Dif_Bruto": -div_aeat["bruto"],
@@ -1877,48 +1880,65 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
                     # Cálculo del Bruto Consolidado (ING + AEAT)
                     tot_bruto_consolidado = 0.0
+                    # 🌍 CÁLCULO DEL BRUTO EXTRANJERO (Todo lo que no sea de España)
+                    tot_bruto_extranjero = 0.0
+                    
                     for _, row in df_cruce.iterrows():
+                        # Lógica para el consolidado
                         if "Falta en" in row["Estado"]:
                             tot_bruto_consolidado += row["Bruto_ING"] if row["Bruto_ING"] != 0 else row["Bruto_AEAT"]
                         else:
                             tot_bruto_consolidado += row["Bruto_ING"]
+                            
+                        # Lógica para el Bruto Extranjero (Solo suma ING si el país NO es España)
+                        pais_upper = str(row.get("Pais", "")).strip().upper()
+                        if pais_upper not in ["ESPAÑA", "ESPAÑA", "ES", ""]:
+                            tot_bruto_extranjero += row["Bruto_ING"]
 
                     # Lo que falta añadir a la declaración
                     tot_bruto_añadir_aeat = df_cruce[df_cruce["Estado"] == "❌ Falta en AEAT"]["Bruto_ING"].sum()
                     
-                    # 🚀 NUEVO CÁLCULO: Retención en origen recuperable total
+                    # Retención en origen recuperable total
                     tot_ret_recuperable = df_cruce["Ret_Recuperable_ING"].sum()
 
                     # --- RENDERIZADO DE LAS CAJITAS (2 FILAS) ---
-                    col1, col2, col3 = st.columns(3)
+                    # Fila 1: Ahora con 4 métricas
+                    col1, col2, col3, col4 = st.columns(4)
                     col1.metric("Bruto Total (ING)", f"{tot_bruto_ing:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
                     col2.metric("Bruto Total (AEAT)", f"{tot_bruto_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
                     
                     color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
                     col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
                     
+                    # 🌍 Nueva Métrica: Bruto Extranjero
+                    texto_extranjero = f"{tot_bruto_extranjero:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                    col4.metric(
+                        "Bruto Extranjero (ING)", 
+                        texto_extranjero, 
+                        help="Suma de los dividendos brutos cobrados de empresas fuera de España."
+                    )
+                    
                     st.markdown("<br>", unsafe_allow_html=True) 
                     
-                    # Ahora creamos 3 columnas para la segunda fila
-                    col4, col5, col6 = st.columns(3)
+                    # Fila 2: Con sus 3 métricas de la Declaración
+                    col5, col6, col7 = st.columns(3)
                     
                     texto_consolidado = f"{tot_bruto_consolidado:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
-                    col4.metric(
+                    col5.metric(
                         "Bruto Consolidado (Cas. 29 y 36)", 
                         texto_consolidado, 
                         help="Este es el valor total y real de tus dividendos que debes introducir en las Casillas 29 y 36 de tu Declaración de la Renta."
                     )
                     
                     texto_añadir = f"{tot_bruto_añadir_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
-                    col5.metric(
+                    col6.metric(
                         "Bruto a añadir a la declaración", 
                         texto_añadir, 
                         help="Dinero que has cobrado según el banco pero que Hacienda no sabe. Tienes que añadirlo en tu borrador."
                     )
                     
-                    # La nueva métrica de retención recuperable
                     texto_recup = f"{tot_ret_recuperable:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
-                    col6.metric(
+                    col7.metric(
                         "Retención Origen Recuperable", 
                         texto_recup, 
                         help="Suma total de la retención en origen recuperable por doble imposición internacional para empresas extranjeras (Casilla 588)."
@@ -1926,7 +1946,10 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
                     st.markdown("### 🔍 Detalle Dividendo a Dividendo")
                     
-                    df_mostrar = df_cruce.style.format({
+                    # Para la vista en tabla ocultamos el Pais para no saturarla si no lo necesitas, o podemos dejarlo (aquí lo he dejado oculto en estilo pero presente en Excel)
+                    cols_a_mostrar = [col for col in df_cruce.columns if col != "Pais"]
+                    
+                    df_mostrar = df_cruce[cols_a_mostrar].style.format({
                         "Bruto_ING": "{:.2f} €", "Bruto_AEAT": "{:.2f} €", "Dif_Bruto": "{:.2f} €",
                         "Ret_ING": "{:.2f} €", "Ret_AEAT": "{:.2f} €", "Dif_Ret": "{:.2f} €",
                         "Ret_Recuperable_ING": "{:.2f} €" 
@@ -1937,7 +1960,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     
                     st.dataframe(df_mostrar, use_container_width=True, height=600)
 
-                    # Botón de Descarga
+                    # Botón de Descarga (El Excel sí llevará la columna Pais para que la tengas)
                     csv_cruce = df_cruce.to_csv(index=False, sep=";").encode('utf-8-sig')
                     st.download_button(
                         label="⬇️ Descargar Auditoría (CSV)", 
