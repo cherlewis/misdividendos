@@ -1729,6 +1729,8 @@ elif opcion == "💸 Asistente de Renta Web":
 
 
 
+
+
 # ==========================================
 # 🚀 APLICACIÓN 9: AUDITORÍA PRO (DB)
 # ==========================================
@@ -1758,7 +1760,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                 from supabase import create_client, Client
                 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-                # 1️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA (Ahora pedimos también 'pais' de ING)
+                # 1️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA
                 res_ing = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino, concepto, retencion_recuperable, pais").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
                 res_aeat = supabase.table("informefiscalaeat").select("id, isin, codigo_emisor, nombre_emisor, importe_integro, retenciones, clave").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
 
@@ -1825,7 +1827,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Concepto": mejor_pareja["clave"] if mejor_pareja["clave"] else div_ing["concepto"],
                                 "ISIN": div_ing["isin"],
                                 "Empresa": div_ing["empresa"] if div_ing["empresa"] else mejor_pareja["empresa"],
-                                "Pais": div_ing["pais"], # 🌍 Añadimos país a la fila
+                                "Pais": div_ing["pais"], 
                                 "Bruto_ING": div_ing["bruto"],
                                 "Bruto_AEAT": mejor_pareja["bruto"],
                                 "Dif_Bruto": dif_b,
@@ -1840,7 +1842,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Concepto": div_ing["concepto"],
                                 "ISIN": div_ing["isin"],
                                 "Empresa": div_ing["empresa"],
-                                "Pais": div_ing["pais"], # 🌍 Añadimos país a la fila
+                                "Pais": div_ing["pais"], 
                                 "Bruto_ING": div_ing["bruto"],
                                 "Bruto_AEAT": 0.0,
                                 "Dif_Bruto": div_ing["bruto"],
@@ -1857,7 +1859,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Concepto": div_aeat["clave"],
                                 "ISIN": div_aeat["isin"],
                                 "Empresa": div_aeat["empresa"],
-                                "Pais": "España", # Por defecto, si falta en ING asumimos que es algo nacional (aunque el bruto ING será 0)
+                                "Pais": "España", # Por defecto, si falta en ING asumimos que es algo nacional
                                 "Bruto_ING": 0.0,
                                 "Bruto_AEAT": div_aeat["bruto"],
                                 "Dif_Bruto": -div_aeat["bruto"],
@@ -1880,8 +1882,11 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
                     # Cálculo del Bruto Consolidado (ING + AEAT)
                     tot_bruto_consolidado = 0.0
-                    # 🌍 CÁLCULO DEL BRUTO EXTRANJERO (Todo lo que no sea de España)
+                    # 🌍 CÁLCULO DEL BRUTO EXTRANJERO (Excluyendo España y Reino Unido)
                     tot_bruto_extranjero = 0.0
+                    
+                    # Lista de países a excluir
+                    paises_excluidos = ["ESPAÑA", "ES", "", "REINO UNIDO", "UK", "GB", "UNITED KINGDOM", "GREAT BRITAIN"]
                     
                     for _, row in df_cruce.iterrows():
                         # Lógica para el consolidado
@@ -1890,9 +1895,9 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                         else:
                             tot_bruto_consolidado += row["Bruto_ING"]
                             
-                        # Lógica para el Bruto Extranjero (Solo suma ING si el país NO es España)
+                        # Lógica para el Bruto Extranjero (Solo suma si NO está en la lista de excluidos)
                         pais_upper = str(row.get("Pais", "")).strip().upper()
-                        if pais_upper not in ["ESPAÑA", "ESPAÑA", "ES", ""]:
+                        if pais_upper not in paises_excluidos:
                             tot_bruto_extranjero += row["Bruto_ING"]
 
                     # Lo que falta añadir a la declaración
@@ -1910,12 +1915,12 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
                     col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
                     
-                    # 🌍 Nueva Métrica: Bruto Extranjero
+                    # 🌍 Métrica Bruto Extranjero actualizada
                     texto_extranjero = f"{tot_bruto_extranjero:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
                     col4.metric(
-                        "Bruto Extranjero (ING)", 
+                        "Bruto Extranjero (Resto)", 
                         texto_extranjero, 
-                        help="Suma de los dividendos brutos cobrados de empresas fuera de España."
+                        help="Suma de los dividendos brutos cobrados en el extranjero, excluyendo España y Reino Unido."
                     )
                     
                     st.markdown("<br>", unsafe_allow_html=True) 
@@ -1946,7 +1951,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
                     st.markdown("### 🔍 Detalle Dividendo a Dividendo")
                     
-                    # Para la vista en tabla ocultamos el Pais para no saturarla si no lo necesitas, o podemos dejarlo (aquí lo he dejado oculto en estilo pero presente en Excel)
                     cols_a_mostrar = [col for col in df_cruce.columns if col != "Pais"]
                     
                     df_mostrar = df_cruce[cols_a_mostrar].style.format({
@@ -1960,7 +1964,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     
                     st.dataframe(df_mostrar, use_container_width=True, height=600)
 
-                    # Botón de Descarga (El Excel sí llevará la columna Pais para que la tengas)
+                    # Botón de Descarga
                     csv_cruce = df_cruce.to_csv(index=False, sep=";").encode('utf-8-sig')
                     st.download_button(
                         label="⬇️ Descargar Auditoría (CSV)", 
@@ -1971,6 +1975,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
+
 
 
 
