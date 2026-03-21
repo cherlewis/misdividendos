@@ -1745,7 +1745,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                 from supabase import create_client, Client
                 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-                # 1️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA (Añadido 'retencion_recuperable' en ING)
+                # 1️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA
                 res_ing = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino, concepto, retencion_recuperable").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
                 res_aeat = supabase.table("informefiscalaeat").select("id, isin, codigo_emisor, nombre_emisor, importe_integro, retenciones, clave").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
 
@@ -1765,7 +1765,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "concepto": str(row.get("concepto", "")).strip(),
                                 "bruto": round(float(row.get("importe_bruto", 0)), 2),
                                 "ret": round(float(row.get("retencion_destino", 0)), 2),
-                                "ret_recup": round(float(row.get("retencion_recuperable", 0)), 2), # Nuevo dato extraído
+                                "ret_recup": round(float(row.get("retencion_recuperable", 0)), 2), 
                                 "comprobado": False  
                             })
 
@@ -1788,7 +1788,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     # 4️⃣ ALGORITMO DE EMPAREJAMIENTO (CARA A CARA 1 a 1)
                     resultados = []
 
-                    # A. Buscamos pareja para los de ING
                     for div_ing in ing_list:
                         if div_ing["comprobado"]: continue
                         
@@ -1818,7 +1817,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Ret_ING": div_ing["ret"],
                                 "Ret_AEAT": mejor_pareja["ret"],
                                 "Dif_Ret": dif_r,
-                                "Ret_Recuperable_ING": div_ing["ret_recup"] # Añadimos el dato a la tabla
+                                "Ret_Recuperable_ING": div_ing["ret_recup"] 
                             })
                         else:
                             resultados.append({
@@ -1832,10 +1831,9 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Ret_ING": div_ing["ret"],
                                 "Ret_AEAT": 0.0,
                                 "Dif_Ret": div_ing["ret"],
-                                "Ret_Recuperable_ING": div_ing["ret_recup"] # Añadimos el dato a la tabla
+                                "Ret_Recuperable_ING": div_ing["ret_recup"] 
                             })
 
-                    # B. Miramos los huérfanos de Hacienda
                     for div_aeat in aeat_list:
                         if not div_aeat["comprobado"]:
                             resultados.append({
@@ -1849,7 +1847,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Ret_ING": 0.0,
                                 "Ret_AEAT": div_aeat["ret"],
                                 "Dif_Ret": -div_aeat["ret"],
-                                "Ret_Recuperable_ING": 0.0 # Como falta en ING, no hay dato de recuperación
+                                "Ret_Recuperable_ING": 0.0 
                             })
 
                     # 5️⃣ RENDERIZADO VISUAL
@@ -1873,57 +1871,11 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
                     # Lo que falta añadir a la declaración
                     tot_bruto_añadir_aeat = df_cruce[df_cruce["Estado"] == "❌ Falta en AEAT"]["Bruto_ING"].sum()
+                    
+                    # 🚀 NUEVO CÁLCULO: Retención en origen recuperable total
+                    tot_ret_recuperable = df_cruce["Ret_Recuperable_ING"].sum()
 
-                    # --- RENDERIZADO DE LAS CAJITAS (2 FILAS) ---
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Bruto Total (ING)", f"{tot_bruto_ing:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
-                    col2.metric("Bruto Total (AEAT)", f"{tot_bruto_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
-                    
-                    color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
-                    col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
-                    
-                    st.markdown("<br>", unsafe_allow_html=True) 
-                    
-                    col4, col5 = st.columns(2)
-                    texto_consolidado = f"{tot_bruto_consolidado:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
-                    col4.metric(
-                        "Bruto Consolidado (Casillas 29 y 36)", 
-                        texto_consolidado, 
-                        help="Este es el valor total y real de tus dividendos que debes introducir en las Casillas 29 y 36 de tu Declaración de la Renta."
-                    )
-                    
-                    texto_añadir = f"{tot_bruto_añadir_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
-                    col5.metric(
-                        "Bruto a añadir a la declaración", 
-                        texto_añadir, 
-                        help="Dinero que has cobrado según el banco pero que Hacienda no sabe. Tienes que añadirlo en tu borrador."
-                    )
-
-                    st.markdown("### 🔍 Detalle Dividendo a Dividendo")
-                    
-                    # Estilos para ver en rojo los descuadres y formatear en euros la nueva columna
-                    df_mostrar = df_cruce.style.format({
-                        "Bruto_ING": "{:.2f} €", "Bruto_AEAT": "{:.2f} €", "Dif_Bruto": "{:.2f} €",
-                        "Ret_ING": "{:.2f} €", "Ret_AEAT": "{:.2f} €", "Dif_Ret": "{:.2f} €",
-                        "Ret_Recuperable_ING": "{:.2f} €" # Formato para la nueva columna
-                    }).applymap(
-                        lambda x: f"color: {'#ff4b4b' if abs(x) > 0.10 else '#21c354'}", 
-                        subset=["Dif_Bruto", "Dif_Ret"]
-                    )
-                    
-                    st.dataframe(df_mostrar, use_container_width=True, height=600)
-
-                    # Botón de Descarga
-                    csv_cruce = df_cruce.to_csv(index=False, sep=";").encode('utf-8-sig')
-                    st.download_button(
-                        label="⬇️ Descargar Auditoría (CSV)", 
-                        data=csv_cruce, 
-                        file_name=f"Auditoria_Pro_1a1_{ejercicio_auditar}.csv", 
-                        mime='text/csv'
-                    )
-
-            except Exception as e:
-                st.error(f"❌ Error interno al realizar la auditoría: {e}")
+                    #
 
 
 
