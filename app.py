@@ -1745,8 +1745,8 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                 from supabase import create_client, Client
                 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-                # 1️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA
-                res_ing = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino, concepto").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
+                # 1️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA (Añadido 'retencion_recuperable' en ING)
+                res_ing = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino, concepto, retencion_recuperable").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
                 res_aeat = supabase.table("informefiscalaeat").select("id, isin, codigo_emisor, nombre_emisor, importe_integro, retenciones, clave").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
 
                 if not res_ing.data and not res_aeat.data:
@@ -1765,6 +1765,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "concepto": str(row.get("concepto", "")).strip(),
                                 "bruto": round(float(row.get("importe_bruto", 0)), 2),
                                 "ret": round(float(row.get("retencion_destino", 0)), 2),
+                                "ret_recup": round(float(row.get("retencion_recuperable", 0)), 2), # Nuevo dato extraído
                                 "comprobado": False  
                             })
 
@@ -1816,7 +1817,8 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Dif_Bruto": dif_b,
                                 "Ret_ING": div_ing["ret"],
                                 "Ret_AEAT": mejor_pareja["ret"],
-                                "Dif_Ret": dif_r
+                                "Dif_Ret": dif_r,
+                                "Ret_Recuperable_ING": div_ing["ret_recup"] # Añadimos el dato a la tabla
                             })
                         else:
                             resultados.append({
@@ -1829,7 +1831,8 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Dif_Bruto": div_ing["bruto"],
                                 "Ret_ING": div_ing["ret"],
                                 "Ret_AEAT": 0.0,
-                                "Dif_Ret": div_ing["ret"]
+                                "Dif_Ret": div_ing["ret"],
+                                "Ret_Recuperable_ING": div_ing["ret_recup"] # Añadimos el dato a la tabla
                             })
 
                     # B. Miramos los huérfanos de Hacienda
@@ -1845,7 +1848,8 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Dif_Bruto": -div_aeat["bruto"],
                                 "Ret_ING": 0.0,
                                 "Ret_AEAT": div_aeat["ret"],
-                                "Dif_Ret": -div_aeat["ret"]
+                                "Dif_Ret": -div_aeat["ret"],
+                                "Ret_Recuperable_ING": 0.0 # Como falta en ING, no hay dato de recuperación
                             })
 
                     # 5️⃣ RENDERIZADO VISUAL
@@ -1867,7 +1871,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                         else:
                             tot_bruto_consolidado += row["Bruto_ING"]
 
-                    # 🚀 NUEVO CÁLCULO: Lo que falta añadir a la declaración
+                    # Lo que falta añadir a la declaración
                     tot_bruto_añadir_aeat = df_cruce[df_cruce["Estado"] == "❌ Falta en AEAT"]["Bruto_ING"].sum()
 
                     # --- RENDERIZADO DE LAS CAJITAS (2 FILAS) ---
@@ -1878,7 +1882,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
                     col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
                     
-                    st.markdown("<br>", unsafe_allow_html=True) # Pequeño salto de línea para separar
+                    st.markdown("<br>", unsafe_allow_html=True) 
                     
                     col4, col5 = st.columns(2)
                     texto_consolidado = f"{tot_bruto_consolidado:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -1897,9 +1901,11 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
                     st.markdown("### 🔍 Detalle Dividendo a Dividendo")
                     
+                    # Estilos para ver en rojo los descuadres y formatear en euros la nueva columna
                     df_mostrar = df_cruce.style.format({
                         "Bruto_ING": "{:.2f} €", "Bruto_AEAT": "{:.2f} €", "Dif_Bruto": "{:.2f} €",
-                        "Ret_ING": "{:.2f} €", "Ret_AEAT": "{:.2f} €", "Dif_Ret": "{:.2f} €"
+                        "Ret_ING": "{:.2f} €", "Ret_AEAT": "{:.2f} €", "Dif_Ret": "{:.2f} €",
+                        "Ret_Recuperable_ING": "{:.2f} €" # Formato para la nueva columna
                     }).applymap(
                         lambda x: f"color: {'#ff4b4b' if abs(x) > 0.10 else '#21c354'}", 
                         subset=["Dif_Bruto", "Dif_Ret"]
@@ -1918,8 +1924,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
-
-
 
 
 
