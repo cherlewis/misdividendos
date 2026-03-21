@@ -1720,6 +1720,7 @@ elif opcion == "💸 Asistente de Renta Web":
 # 🚀 APLICACIÓN 9: AUDITORÍA PRO (DB)
 # ==========================================
 # ==========================================
+# ==========================================
 # 🚀 APLICACIÓN: AUDITORÍA PRO (DB)
 # ==========================================
 elif opcion == "⚖️ Auditoría Pro (DB)":
@@ -1875,7 +1876,66 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     # 🚀 NUEVO CÁLCULO: Retención en origen recuperable total
                     tot_ret_recuperable = df_cruce["Ret_Recuperable_ING"].sum()
 
-                    #
+                    # --- RENDERIZADO DE LAS CAJITAS (2 FILAS) ---
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Bruto Total (ING)", f"{tot_bruto_ing:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
+                    col2.metric("Bruto Total (AEAT)", f"{tot_bruto_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
+                    
+                    color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
+                    col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
+                    
+                    st.markdown("<br>", unsafe_allow_html=True) 
+                    
+                    # Ahora creamos 3 columnas para la segunda fila
+                    col4, col5, col6 = st.columns(3)
+                    
+                    texto_consolidado = f"{tot_bruto_consolidado:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                    col4.metric(
+                        "Bruto Consolidado (Cas. 29 y 36)", 
+                        texto_consolidado, 
+                        help="Este es el valor total y real de tus dividendos que debes introducir en las Casillas 29 y 36 de tu Declaración de la Renta."
+                    )
+                    
+                    texto_añadir = f"{tot_bruto_añadir_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                    col5.metric(
+                        "Bruto a añadir a la declaración", 
+                        texto_añadir, 
+                        help="Dinero que has cobrado según el banco pero que Hacienda no sabe. Tienes que añadirlo en tu borrador."
+                    )
+                    
+                    # La nueva métrica de retención recuperable
+                    texto_recup = f"{tot_ret_recuperable:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                    col6.metric(
+                        "Retención Origen Recuperable", 
+                        texto_recup, 
+                        help="Suma total de la retención en origen recuperable por doble imposición internacional para empresas extranjeras (Casilla 588)."
+                    )
+
+                    st.markdown("### 🔍 Detalle Dividendo a Dividendo")
+                    
+                    df_mostrar = df_cruce.style.format({
+                        "Bruto_ING": "{:.2f} €", "Bruto_AEAT": "{:.2f} €", "Dif_Bruto": "{:.2f} €",
+                        "Ret_ING": "{:.2f} €", "Ret_AEAT": "{:.2f} €", "Dif_Ret": "{:.2f} €",
+                        "Ret_Recuperable_ING": "{:.2f} €" 
+                    }).applymap(
+                        lambda x: f"color: {'#ff4b4b' if abs(x) > 0.10 else '#21c354'}", 
+                        subset=["Dif_Bruto", "Dif_Ret"]
+                    )
+                    
+                    st.dataframe(df_mostrar, use_container_width=True, height=600)
+
+                    # Botón de Descarga
+                    csv_cruce = df_cruce.to_csv(index=False, sep=";").encode('utf-8-sig')
+                    st.download_button(
+                        label="⬇️ Descargar Auditoría (CSV)", 
+                        data=csv_cruce, 
+                        file_name=f"Auditoria_Pro_1a1_{ejercicio_auditar}.csv", 
+                        mime='text/csv'
+                    )
+
+            except Exception as e:
+                st.error(f"❌ Error interno al realizar la auditoría: {e}")
+
 
 
 
