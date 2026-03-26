@@ -838,7 +838,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
         datos_informe = []
         with st.spinner("Analizando Informe Fiscal de ING y cruzando con tu base de datos..."):
             
-            # 🕵️‍♂️ DICCIONARIO DE ISIN (De tu Base de Datos)
             map_empresa_isin = {}
             try:
                 from supabase import create_client, Client
@@ -852,7 +851,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
             except Exception as e:
                 st.warning(f"⚠️ No se pudo cargar la tabla de Empresas: {e}")
 
-            # 🧠 DICCIONARIO MAESTRO DE ABREVIATURAS DE ING (Soluciona el problema de Redeia, Línea, etc.)
+            # 🧠 DICCIONARIO MAESTRO CORREGIDO
             map_alias = {
                 "REDEIA": "ES0173093024", "RED ELECTRICA": "ES0173093024",
                 "NATURGY": "ES0116870314", "GAS NATURAL": "ES0116870314",
@@ -860,7 +859,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                 "VIDRALA": "ES0183746314", "VID": "ES0183746314",
                 "VISCOFAN": "ES0184262212", "VIS": "ES0184262212",
                 "EBRO": "ES0112501012", "LINEA": "ES0105546008",
-                "MIQUEL": "ES0164180012", "GR.C.OCCIDEN": "ES0118594417",
+                "MIQUEL": "ES0164180012", "GR.C.OCCIDEN": "ES0116920333", # 🎯 Catalana Occidente arreglado
                 "IBERPAPEL": "ES0147561015", "ENAGAS": "ES0130960018",
                 "ENDESA": "ES0130670112", "BA.SABADELL": "ES0113860A34",
                 "TELEFONICA": "ES0178430E18", "ACS": "ES0167050915",
@@ -884,7 +883,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                             patron_div = r"(?i)(.*?)\s+(Nacional|Internacional)\s+(Dividendo|Primas de asistencia|Primas de emisi[oó]n|Primas de emision)\s+([\d,.]+)\s*€\s+([\d,.]+)\s*€(?:\s+([\d,.]+)\s*€)?"
                             
                             for idx, linea in enumerate(lineas):
-                                # 1️⃣ EXTRACCIÓN DE DRIPs (Stock Dividends)
                                 match_drip = re.search(patron_drip, linea)
                                 if match_drip:
                                     empresa_full = match_drip.group(1).strip()
@@ -902,7 +900,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                             
                                     if not isin_encontrado:
                                         emp_up = empresa_full.upper()
-                                        emp_up_clean = re.sub(r'\.D\..*|\sD\..*|\.D.*', '', emp_up).strip() # Limpiamos "Derechos"
+                                        emp_up_clean = re.sub(r'\.D\..*|\sD\..*|\.D.*', '', emp_up).strip()
                                         
                                         if emp_up_clean in map_alias:
                                             isin_encontrado = map_alias[emp_up_clean]
@@ -936,7 +934,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                     })
                                     continue
                                 
-                                # 2️⃣ EXTRACCIÓN DE DIVIDENDOS EN EFECTIVO
                                 match_div = re.search(patron_div, linea)
                                 if match_div:
                                     empresa_raw = match_div.group(1).strip()
@@ -967,7 +964,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
 
                                     if not isin_encontrado:
                                         emp_up = empresa_full.upper()
-                                        # 🎯 MAGIA: Limpiamos los derechos (Ej: ACS.D.07.25 -> ACS | IBE.D -> IBE)
                                         emp_up_clean = re.sub(r'\.D\..*|\sD\..*|\.D.*', '', emp_up).strip()
                                         
                                         if emp_up_clean in map_alias:
@@ -980,7 +976,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                                     isin_encontrado = isin_val
                                                     break
 
-                                    # MATEMÁTICAS AVANZADAS
                                     bruto_num = euro_a_numero(bruto)
                                     ret_ori_num = euro_a_numero(ret_origen)
                                     ret_des_num = euro_a_numero(ret_destino)
@@ -991,7 +986,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                     
                                     pais_origen = obtener_bandera(isin_encontrado, empresa_full)
                                     
-                                    # REGLA FISCAL INTELIGENTE
                                     recuperable = 0.0
                                     if ret_ori_num > 0:
                                         pais_limpio = pais_origen.strip().upper()
@@ -1753,7 +1747,7 @@ elif opcion == "💸 Asistente de Renta Web":
 # ==========================================
 elif opcion == "⚖️ Auditoría Pro (DB)":
     st.title("⚖️ Auditoría Pro (Base de Datos)")
-    st.write("Cruza los datos directamente desde Supabase, dividendo a dividendo (1 a 1). El sistema usa la columna ISIN oficial de ambas tablas para un emparejamiento perfecto.")
+    st.write("Cruza los datos directamente desde Supabase, dividendo a dividendo (1 a 1). El sistema usa la columna ISIN y analiza su 'ADN' para conectar los derechos temporales con sus empresas matrices.")
 
     from datetime import datetime
     import pandas as pd
@@ -1774,37 +1768,41 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                 from supabase import create_client, Client
                 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-                # 1️⃣ DESCARGAR DATOS BRUTOS DE ING Y HACIENDA
+                # Función inteligente para comparar ISINs (ES01 vs ES06)
+                def isin_coincide(i1, i2):
+                    if not i1 or not i2: return False
+                    if i1 == i2: return True
+                    # Si ambos son españoles y tienen longitud suficiente, comparamos su ADN (posiciones 4 a 8)
+                    if i1.startswith("ES") and i2.startswith("ES") and len(i1) >= 9 and len(i2) >= 9:
+                        return i1[4:9] == i2[4:9]
+                    return False
+
                 res_ing = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino, concepto, retencion_recuperable, pais").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
                 res_aeat = supabase.table("informefiscalaeat").select("id, isin, codigo_emisor, nombre_emisor, importe_integro, retenciones, clave").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
 
                 if not res_ing.data and not res_aeat.data:
                     st.warning(f"🤷‍♂️ No hay datos guardados en ninguna de las dos tablas para el año {ejercicio_auditar}.")
                 else:
-                    # 2️⃣ PREPARAR LISTA DE ING (CON LIMPIEZA EXTREMA)
                     ing_list = []
                     if res_ing.data:
                         for row in res_ing.data:
                             isin_limpio = str(row.get("isin", "")).replace('\xa0', '').replace(' ', '').strip().upper()
-                            
                             ing_list.append({
                                 "id": row["id"],
                                 "isin": isin_limpio,
                                 "empresa": str(row.get("empresa", "")).strip(),
                                 "concepto": str(row.get("concepto", "")).strip(),
-                                "pais": str(row.get("pais", "Desconocido")).strip(), # 🌍 Guardamos el país
+                                "pais": str(row.get("pais", "Desconocido")).strip(),
                                 "bruto": round(float(row.get("importe_bruto", 0)), 2),
                                 "ret": round(float(row.get("retencion_destino", 0)), 2),
                                 "ret_recup": round(float(row.get("retencion_recuperable", 0)), 2), 
                                 "comprobado": False  
                             })
 
-                    # 3️⃣ PREPARAR LISTA DE HACIENDA (CON LIMPIEZA EXTREMA)
                     aeat_list = []
                     if res_aeat.data:
                         for row in res_aeat.data:
                             isin_limpio = str(row.get("isin", "")).replace('\xa0', '').replace(' ', '').strip().upper()
-                            
                             aeat_list.append({
                                 "id": row["id"],
                                 "isin": isin_limpio,
@@ -1815,7 +1813,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "comprobado": False 
                             })
 
-                    # 4️⃣ ALGORITMO DE EMPAREJAMIENTO (CARA A CARA 1 a 1)
                     resultados = []
 
                     for div_ing in ing_list:
@@ -1824,7 +1821,8 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                         mejor_pareja = None
                         for div_aeat in aeat_list:
                             if not div_aeat["comprobado"]:
-                                if div_ing["isin"] and div_aeat["isin"] == div_ing["isin"] and abs(div_aeat["bruto"] - div_ing["bruto"]) <= 0.02:
+                                # 🎯 Usamos la función inteligente 'isin_coincide'
+                                if isin_coincide(div_ing["isin"], div_aeat["isin"]) and abs(div_aeat["bruto"] - div_ing["bruto"]) <= 0.02:
                                     mejor_pareja = div_aeat
                                     break 
                         
@@ -1839,7 +1837,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                             resultados.append({
                                 "Estado": estado,
                                 "Concepto": mejor_pareja["clave"] if mejor_pareja["clave"] else div_ing["concepto"],
-                                "ISIN": div_ing["isin"],
+                                "ISIN": f'{div_ing["isin"]} / {mejor_pareja["isin"]}' if div_ing["isin"] != mejor_pareja["isin"] else div_ing["isin"],
                                 "Empresa": div_ing["empresa"] if div_ing["empresa"] else mejor_pareja["empresa"],
                                 "Pais": div_ing["pais"], 
                                 "Bruto_ING": div_ing["bruto"],
@@ -1873,7 +1871,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Concepto": div_aeat["clave"],
                                 "ISIN": div_aeat["isin"],
                                 "Empresa": div_aeat["empresa"],
-                                "Pais": "España", # Por defecto, si falta en ING asumimos que es algo nacional
+                                "Pais": "España",
                                 "Bruto_ING": 0.0,
                                 "Bruto_AEAT": div_aeat["bruto"],
                                 "Dif_Bruto": -div_aeat["bruto"],
@@ -1883,45 +1881,32 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Ret_Recuperable_ING": 0.0 
                             })
 
-                    # 5️⃣ RENDERIZADO VISUAL
                     df_cruce = pd.DataFrame(resultados)
                     df_cruce = df_cruce.sort_values(by=["Estado", "Empresa"], ascending=[False, True])
 
                     st.subheader("🎯 Resumen del Cruce Fiscal 1 a 1")
                     
-                    # --- CÁLCULO DE TOTALES ---
                     tot_bruto_ing = df_cruce["Bruto_ING"].sum()
                     tot_bruto_aeat = df_cruce["Bruto_AEAT"].sum()
                     dif_global_bruto = tot_bruto_ing - tot_bruto_aeat
 
-                    # Cálculo del Bruto Consolidado (ING + AEAT)
                     tot_bruto_consolidado = 0.0
-                    # 🌍 CÁLCULO DEL BRUTO EXTRANJERO (Excluyendo España y Reino Unido)
                     tot_bruto_extranjero = 0.0
-                    
-                    # Lista de países a excluir
                     paises_excluidos = ["ESPAÑA", "ES", "", "REINO UNIDO", "UK", "GB", "UNITED KINGDOM", "GREAT BRITAIN"]
                     
                     for _, row in df_cruce.iterrows():
-                        # Lógica para el consolidado
                         if "Falta en" in row["Estado"]:
                             tot_bruto_consolidado += row["Bruto_ING"] if row["Bruto_ING"] != 0 else row["Bruto_AEAT"]
                         else:
                             tot_bruto_consolidado += row["Bruto_ING"]
                             
-                        # Lógica para el Bruto Extranjero (Solo suma si NO está en la lista de excluidos)
                         pais_upper = str(row.get("Pais", "")).strip().upper()
                         if pais_upper not in paises_excluidos:
                             tot_bruto_extranjero += row["Bruto_ING"]
 
-                    # Lo que falta añadir a la declaración
                     tot_bruto_añadir_aeat = df_cruce[df_cruce["Estado"] == "❌ Falta en AEAT"]["Bruto_ING"].sum()
-                    
-                    # Retención en origen recuperable total
                     tot_ret_recuperable = df_cruce["Ret_Recuperable_ING"].sum()
 
-                    # --- RENDERIZADO DE LAS CAJITAS (2 FILAS) ---
-                    # Fila 1: Ahora con 4 métricas
                     col1, col2, col3, col4 = st.columns(4)
                     col1.metric("Bruto Total (ING)", f"{tot_bruto_ing:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
                     col2.metric("Bruto Total (AEAT)", f"{tot_bruto_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
@@ -1929,7 +1914,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
                     col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
                     
-                    # 🌍 Métrica Bruto Extranjero actualizada
                     texto_extranjero = f"{tot_bruto_extranjero:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
                     col4.metric(
                         "Bruto Extranjero (Resto)", 
@@ -1939,7 +1923,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     
                     st.markdown("<br>", unsafe_allow_html=True) 
                     
-                    # Fila 2: Con sus 3 métricas de la Declaración
                     col5, col6, col7 = st.columns(3)
                     
                     texto_consolidado = f"{tot_bruto_consolidado:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -1978,7 +1961,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     
                     st.dataframe(df_mostrar, use_container_width=True, height=600)
 
-                    # Botón de Descarga
                     csv_cruce = df_cruce.to_csv(index=False, sep=";").encode('utf-8-sig')
                     st.download_button(
                         label="⬇️ Descargar Auditoría (CSV)", 
