@@ -796,6 +796,8 @@ elif opcion == "🗂️ Renombrador de PDFs":
 
 
 
+
+
 # ==========================================
 # 🚀 APLICACIÓN 4: EXTRACTOR INFORME FISCAL ING
 # ==========================================
@@ -868,8 +870,9 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                         
                         if texto_completo:
                             lineas = texto_completo.split('\n')
-                            patron_drip = r"(.*?)\s+(Nacional|Internacional)\s+(\d{2}/\d{2}/\d{4})\s+STOCK DIVIDEND\s+(\d+)\s+([\d.,]+)\s*€"
-                            patron_div = r"(.*?)\s+(Nacional|Internacional)\s+DIVIDENDO\s+([\d,.]+)\s*€\s+([\d,.]+)\s*€(?:\s+([\d,.]+)\s*€)?"
+                            # 🎯 MODIFICACIÓN APLICADA: Ahora no le importan las mayúsculas/minúsculas y busca también las Primas
+                            patron_drip = r"(?i)(.*?)\s+(Nacional|Internacional)\s+(\d{2}/\d{2}/\d{4})\s+STOCK DIVIDEND\s+(\d+)\s+([\d.,]+)\s*€"
+                            patron_div = r"(?i)(.*?)\s+(Nacional|Internacional)\s+(Dividendo|Primas de asistencia|Primas de emisi[oó]n|Primas de emision)\s+([\d,.]+)\s*€\s+([\d,.]+)\s*€(?:\s+([\d,.]+)\s*€)?"
                             
                             for idx, linea in enumerate(lineas):
                                 # 1️⃣ EXTRACCIÓN DE DRIPs (Stock Dividends)
@@ -888,7 +891,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                             isin_encontrado = match_isin.group(1)
                                             break
                                             
-                                    # 🆘 SALVAVIDAS ISIN PARA DRIPS
                                     if not isin_encontrado:
                                         emp_up = empresa_full.upper()
                                         if emp_up in map_empresa_isin:
@@ -925,15 +927,16 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                 match_div = re.search(patron_div, linea)
                                 if match_div:
                                     empresa_raw = match_div.group(1).strip()
-                                    mercado = match_div.group(2).strip()
-                                    bruto = match_div.group(3).strip()
+                                    mercado = match_div.group(2).strip().capitalize()
+                                    concepto_extraido = match_div.group(3).strip().upper() # 🎯 Ahora guardamos si es dividendo o prima
+                                    bruto = match_div.group(4).strip()
                                     
                                     if mercado == "Nacional":
                                         ret_origen = "0,00"
-                                        ret_destino = match_div.group(4).strip()
+                                        ret_destino = match_div.group(5).strip() # 🎯 Desplazamiento de grupos corregido
                                     else:
-                                        ret_origen = match_div.group(4).strip()
-                                        ret_destino = match_div.group(5).strip() if match_div.group(5) else "0,00"
+                                        ret_origen = match_div.group(5).strip()
+                                        ret_destino = match_div.group(6).strip() if match_div.group(6) else "0,00"
                                     
                                     isin_encontrado = ""
                                     match_isin = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)", empresa_raw)
@@ -949,7 +952,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                                     isin_encontrado = match_isin_next.group(1)
                                                     break
 
-                                    # 🆘 SALVAVIDAS ISIN PARA DIVIDENDOS
                                     if not isin_encontrado:
                                         emp_up = empresa_full.upper()
                                         if emp_up in map_empresa_isin:
@@ -966,31 +968,25 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                     ret_des_num = euro_a_numero(ret_destino)
                                     neto_num = bruto_num - ret_ori_num - ret_des_num
                                     
-                                    # Cálculo de Porcentajes de retención
                                     pct_ori = round((ret_ori_num / bruto_num) * 100, 2) if bruto_num > 0 else 0.0
                                     pct_des = round((ret_des_num / bruto_num) * 100, 2) if bruto_num > 0 else 0.0
                                     
-                                    # Identificamos el país primero
                                     pais_origen = obtener_bandera(isin_encontrado, empresa_full)
                                     
-                                    # 🎯 NUEVA REGLA FISCAL INTELIGENTE PARA LA RETENCIÓN RECUPERABLE
+                                    # REGLA FISCAL INTELIGENTE
                                     recuperable = 0.0
                                     if ret_ori_num > 0:
                                         pais_limpio = pais_origen.strip().upper()
-                                        
-                                        # Si es Francia o Alemania, calculamos el máximo del 15%
                                         if pais_limpio in ["FRANCIA", "FRANCE", "ALEMANIA", "GERMANY"]:
                                             maximo_recuperable = bruto_num * 0.15
                                             recuperable = round(min(ret_ori_num, maximo_recuperable), 2)
-                                        
-                                        # Para TODO EL RESTO (Holanda, USA, UK...), copiamos el valor del banco al céntimo
                                         else:
                                             recuperable = ret_ori_num
 
                                     datos_informe.append({
                                         "fecha_abono": f"31/12/{ejercicio_fiscal_ing}",
                                         "isin": isin_encontrado,
-                                        "concepto": "DIVIDENDO",
+                                        "concepto": concepto_extraido, # 🎯 Insertado el concepto extraído real
                                         "importe_neto": round(neto_num, 2),
                                         "retencion_origen": round(ret_ori_num, 2),
                                         "porcentaje_retencion_origen": pct_ori,
@@ -1030,7 +1026,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                 if st.button("☁️ Subir a Base de Datos (informefiscaling)", type="primary", use_container_width=True):
                     with st.spinner("Comprobando duplicados y guardando en Supabase..."):
                         try:
-                            # 1️⃣ Traer existentes de la Base de Datos para crear la HUELLA DIGITAL
                             res_db = supabase.table("informefiscaling").select("isin, importe_bruto").eq("ejercicio_fiscal", int(ejercicio_fiscal_ing)).execute()
                             
                             db_existentes = []
@@ -1039,7 +1034,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                     isin_db = str(row_db.get("isin", "")).strip()
                                     imp_db = round(float(row_db.get("importe_bruto", 0)), 2)
                                     firma = f"{isin_db}_{imp_db}"
-                                    db_existentes.append(firma) # Lista de lo que YA ESTÁ en la nube
+                                    db_existentes.append(firma)
                             
                             registros_a_subir = []
                             for _, row in df_ing.iterrows():
@@ -1047,9 +1042,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                 imp_excel = round(float(row["importe_bruto"]), 2)
                                 firma_actual = f"{isin_excel}_{imp_excel}"
                                 
-                                # 🛡️ Comprobación de duplicados (solo borra si estaba en la nube)
                                 if firma_actual in db_existentes:
-                                    # Lo tachamos de la lista "virtual" de la nube para permitir duplicados extra si los hay
                                     db_existentes.remove(firma_actual)
                                 else:
                                     registro = {
