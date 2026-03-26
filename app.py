@@ -821,7 +821,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
     
     archivos_pdf_inf = st.file_uploader("Sube tu PDF de Datos Fiscales de ING aquí", type=["pdf"], accept_multiple_files=True, key="inf_ing")
 
-    # Función para asignar banderas/países
     def obtener_bandera(isin, empresa):
         if isinstance(isin, str) and len(isin) >= 2 and isin != "ISIN no encontrado":
             prefijo = isin[:2].upper()
@@ -839,9 +838,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
         datos_informe = []
         with st.spinner("Analizando Informe Fiscal de ING y cruzando con tu base de datos..."):
             
-            # -------------------------------------------------------------
-            # 🕵️‍♂️ DICCIONARIO DE ISIN DE EMERGENCIA (Buscamos en la DB)
-            # -------------------------------------------------------------
+            # 🕵️‍♂️ DICCIONARIO DE ISIN (De tu Base de Datos)
             map_empresa_isin = {}
             try:
                 from supabase import create_client, Client
@@ -853,11 +850,24 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                         if e.get("NombreING") and e.get("ISIN"):
                             map_empresa_isin[str(e["NombreING"]).strip().upper()] = str(e["ISIN"]).strip()
             except Exception as e:
-                st.warning(f"⚠️ No se pudo cargar la tabla de Empresas para buscar ISINs: {e}")
+                st.warning(f"⚠️ No se pudo cargar la tabla de Empresas: {e}")
 
-            # -------------------------------------------------------------
-            # LECTURA DEL PDF
-            # -------------------------------------------------------------
+            # 🧠 DICCIONARIO MAESTRO DE ABREVIATURAS DE ING (Soluciona el problema de Redeia, Línea, etc.)
+            map_alias = {
+                "REDEIA": "ES0173093024", "RED ELECTRICA": "ES0173093024",
+                "NATURGY": "ES0116870314", "GAS NATURAL": "ES0116870314",
+                "MAPFRE": "ES0124244E34", "LOGISTA": "ES0105027009",
+                "VIDRALA": "ES0183746314", "VID": "ES0183746314",
+                "VISCOFAN": "ES0184262212", "VIS": "ES0184262212",
+                "EBRO": "ES0112501012", "LINEA": "ES0105546008",
+                "MIQUEL": "ES0164180012", "GR.C.OCCIDEN": "ES0118594417",
+                "IBERPAPEL": "ES0147561015", "ENAGAS": "ES0130960018",
+                "ENDESA": "ES0130670112", "BA.SABADELL": "ES0113860A34",
+                "TELEFONICA": "ES0178430E18", "ACS": "ES0167050915",
+                "IBERDROLA": "ES0144580Y14", "IBE": "ES0144580Y14",
+                "BBVA": "ES0113211835"
+            }
+
             for archivo in archivos_pdf_inf:
                 try:
                     import pdfplumber
@@ -870,7 +880,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                         
                         if texto_completo:
                             lineas = texto_completo.split('\n')
-                            # 🎯 MODIFICACIÓN APLICADA: Ahora no le importan las mayúsculas/minúsculas y busca también las Primas
                             patron_drip = r"(?i)(.*?)\s+(Nacional|Internacional)\s+(\d{2}/\d{2}/\d{4})\s+STOCK DIVIDEND\s+(\d+)\s+([\d.,]+)\s*€"
                             patron_div = r"(?i)(.*?)\s+(Nacional|Internacional)\s+(Dividendo|Primas de asistencia|Primas de emisi[oó]n|Primas de emision)\s+([\d,.]+)\s*€\s+([\d,.]+)\s*€(?:\s+([\d,.]+)\s*€)?"
                             
@@ -893,11 +902,15 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                             
                                     if not isin_encontrado:
                                         emp_up = empresa_full.upper()
-                                        if emp_up in map_empresa_isin:
-                                            isin_encontrado = map_empresa_isin[emp_up]
+                                        emp_up_clean = re.sub(r'\.D\..*|\sD\..*|\.D.*', '', emp_up).strip() # Limpiamos "Derechos"
+                                        
+                                        if emp_up_clean in map_alias:
+                                            isin_encontrado = map_alias[emp_up_clean]
+                                        elif emp_up_clean in map_empresa_isin:
+                                            isin_encontrado = map_empresa_isin[emp_up_clean]
                                         else:
                                             for n_ing, isin_val in map_empresa_isin.items():
-                                                if n_ing in emp_up or emp_up in n_ing:
+                                                if len(emp_up_clean) >= 3 and (n_ing in emp_up_clean or emp_up_clean in n_ing):
                                                     isin_encontrado = isin_val
                                                     break
 
@@ -928,12 +941,12 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                 if match_div:
                                     empresa_raw = match_div.group(1).strip()
                                     mercado = match_div.group(2).strip().capitalize()
-                                    concepto_extraido = match_div.group(3).strip().upper() # 🎯 Ahora guardamos si es dividendo o prima
+                                    concepto_extraido = match_div.group(3).strip().upper()
                                     bruto = match_div.group(4).strip()
                                     
                                     if mercado == "Nacional":
                                         ret_origen = "0,00"
-                                        ret_destino = match_div.group(5).strip() # 🎯 Desplazamiento de grupos corregido
+                                        ret_destino = match_div.group(5).strip()
                                     else:
                                         ret_origen = match_div.group(5).strip()
                                         ret_destino = match_div.group(6).strip() if match_div.group(6) else "0,00"
@@ -954,11 +967,16 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
 
                                     if not isin_encontrado:
                                         emp_up = empresa_full.upper()
-                                        if emp_up in map_empresa_isin:
-                                            isin_encontrado = map_empresa_isin[emp_up]
+                                        # 🎯 MAGIA: Limpiamos los derechos (Ej: ACS.D.07.25 -> ACS | IBE.D -> IBE)
+                                        emp_up_clean = re.sub(r'\.D\..*|\sD\..*|\.D.*', '', emp_up).strip()
+                                        
+                                        if emp_up_clean in map_alias:
+                                            isin_encontrado = map_alias[emp_up_clean]
+                                        elif emp_up_clean in map_empresa_isin:
+                                            isin_encontrado = map_empresa_isin[emp_up_clean]
                                         else:
                                             for n_ing, isin_val in map_empresa_isin.items():
-                                                if n_ing in emp_up or emp_up in n_ing:
+                                                if len(emp_up_clean) >= 3 and (n_ing in emp_up_clean or emp_up_clean in n_ing):
                                                     isin_encontrado = isin_val
                                                     break
 
@@ -986,7 +1004,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                     datos_informe.append({
                                         "fecha_abono": f"31/12/{ejercicio_fiscal_ing}",
                                         "isin": isin_encontrado,
-                                        "concepto": concepto_extraido, # 🎯 Insertado el concepto extraído real
+                                        "concepto": concepto_extraido,
                                         "importe_neto": round(neto_num, 2),
                                         "retencion_origen": round(ret_ori_num, 2),
                                         "porcentaje_retencion_origen": pct_ori,
@@ -1074,6 +1092,9 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                 
                         except Exception as e:
                             st.error(f"❌ Error al guardar en DB: {e}")
+
+
+
 
 
 
