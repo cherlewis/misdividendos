@@ -1901,13 +1901,9 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                         else:
                             tot_bruto_consolidado += row["Bruto_ING"]
                             
-                        # 🌍 LÓGICA UNIVERSAL EXTRANJERO: 
-                        # ¿Es extranjera? (No es de España)
-                        pais_upper = str(row.get("Pais", "")).strip().upper()
-                        if pais_upper not in ["ESPAÑA", "ES", ""]:
-                            # ¿Tiene retención en origen mayor que 0?
-                            if row.get("Ret_Ori_ING", 0.0) > 0:
-                                tot_bruto_extranjero += row["Bruto_ING"]
+                        # 🎯 LÓGICA MÁXIMA EFICIENCIA: Solo suma si la Retención Recuperable es > 0
+                        if row.get("Ret_Recuperable_ING", 0.0) > 0:
+                            tot_bruto_extranjero += row["Bruto_ING"]
 
                     tot_bruto_añadir_aeat = df_cruce[df_cruce["Estado"] == "❌ Falta en AEAT"]["Bruto_ING"].sum()
                     tot_ret_recuperable = df_cruce["Ret_Recuperable_ING"].sum()
@@ -1921,9 +1917,9 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     
                     texto_extranjero = f"{tot_bruto_extranjero:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
                     col4.metric(
-                        "Bruto Extranjero (Con Ret.)", 
+                        "Bruto Extranjero (Recuperable > 0)", 
                         texto_extranjero, 
-                        help="Suma de los dividendos brutos cobrados en el extranjero que SÍ han tenido retención en origen (>0)."
+                        help="Suma de los dividendos brutos donde la Retención Recuperable es mayor que 0."
                     )
                     
                     st.markdown("<br>", unsafe_allow_html=True) 
@@ -1976,7 +1972,8 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
-                
+
+
 
 
 
