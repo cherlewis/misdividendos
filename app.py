@@ -1775,7 +1775,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                         return i1[4:9] == i2[4:9]
                     return False
 
-                # 🎯 AÑADIDO: Ahora también traemos 'retencion_origen' de la base de datos
                 res_ing = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino, retencion_origen, concepto, retencion_recuperable, pais").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
                 res_aeat = supabase.table("informefiscalaeat").select("id, isin, codigo_emisor, nombre_emisor, importe_integro, retenciones, clave").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
 
@@ -1794,7 +1793,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "pais": str(row.get("pais", "Desconocido")).strip(),
                                 "bruto": round(float(row.get("importe_bruto", 0)), 2),
                                 "ret": round(float(row.get("retencion_destino", 0)), 2),
-                                "ret_ori": round(float(row.get("retencion_origen", 0)), 2), # 🎯 Guardamos la retención en origen
+                                "ret_ori": round(float(row.get("retencion_origen", 0)), 2), 
                                 "ret_recup": round(float(row.get("retencion_recuperable", 0)), 2), 
                                 "comprobado": False  
                             })
@@ -1845,7 +1844,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Ret_ING": div_ing["ret"],
                                 "Ret_AEAT": mejor_pareja["ret"],
                                 "Dif_Ret": dif_r,
-                                "Ret_Ori_ING": div_ing["ret_ori"], # 🎯 Pasamos la retención en origen al df
+                                "Ret_Ori_ING": div_ing["ret_ori"], 
                                 "Ret_Recuperable_ING": div_ing["ret_recup"] 
                             })
                         else:
@@ -1861,7 +1860,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                                 "Ret_ING": div_ing["ret"],
                                 "Ret_AEAT": 0.0,
                                 "Dif_Ret": div_ing["ret"],
-                                "Ret_Ori_ING": div_ing["ret_ori"], # 🎯 Pasamos la retención en origen
+                                "Ret_Ori_ING": div_ing["ret_ori"], 
                                 "Ret_Recuperable_ING": div_ing["ret_recup"] 
                             })
 
@@ -1895,23 +1894,19 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     tot_bruto_consolidado = 0.0
                     tot_bruto_extranjero = 0.0
                     
-                    paises_excluidos = ["ESPAÑA", "ES", "", "REINO UNIDO", "UK", "GB", "UNITED KINGDOM", "GREAT BRITAIN"]
-                    paises_holanda = ["HOLANDA", "PAÍSES BAJOS", "PAISES BAJOS", "NL", "NETHERLANDS"]
-                    
                     for _, row in df_cruce.iterrows():
+                        # Lógica Consolidado
                         if "Falta en" in row["Estado"]:
                             tot_bruto_consolidado += row["Bruto_ING"] if row["Bruto_ING"] != 0 else row["Bruto_AEAT"]
                         else:
                             tot_bruto_consolidado += row["Bruto_ING"]
                             
-                        # 🌍 Lógica perfecta: Comprobamos la Retención en ORIGEN
+                        # 🌍 LÓGICA UNIVERSAL EXTRANJERO: 
+                        # ¿Es extranjera? (No es de España)
                         pais_upper = str(row.get("Pais", "")).strip().upper()
-                        if pais_upper not in paises_excluidos:
-                            if pais_upper in paises_holanda:
-                                # ¡MÁGIA! Si es de Holanda, exigimos que la Retención en ORIGEN sea mayor que 0
-                                if row.get("Ret_Ori_ING", 0) > 0:
-                                    tot_bruto_extranjero += row["Bruto_ING"]
-                            else:
+                        if pais_upper not in ["ESPAÑA", "ES", ""]:
+                            # ¿Tiene retención en origen mayor que 0?
+                            if row.get("Ret_Ori_ING", 0.0) > 0:
                                 tot_bruto_extranjero += row["Bruto_ING"]
 
                     tot_bruto_añadir_aeat = df_cruce[df_cruce["Estado"] == "❌ Falta en AEAT"]["Bruto_ING"].sum()
@@ -1926,9 +1921,9 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     
                     texto_extranjero = f"{tot_bruto_extranjero:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
                     col4.metric(
-                        "Bruto Extranjero (Resto)", 
+                        "Bruto Extranjero (Con Ret.)", 
                         texto_extranjero, 
-                        help="Suma de los dividendos brutos cobrados en el extranjero, excluyendo España, Reino Unido, y empresas holandesas sin retención en origen (como Unilever)."
+                        help="Suma de los dividendos brutos cobrados en el extranjero que SÍ han tenido retención en origen (>0)."
                     )
                     
                     st.markdown("<br>", unsafe_allow_html=True) 
@@ -1958,7 +1953,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
                     st.markdown("### 🔍 Detalle Dividendo a Dividendo")
                     
-                    # Ocultamos de la vista las columnas técnicas (Pais y Ret_Ori_ING) para que siga quedando bonito
                     cols_a_mostrar = [col for col in df_cruce.columns if col not in ["Pais", "Ret_Ori_ING"]]
                     
                     df_mostrar = df_cruce[cols_a_mostrar].style.format({
@@ -1972,7 +1966,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     
                     st.dataframe(df_mostrar, use_container_width=True, height=600)
 
-                    # Botón de Descarga
                     csv_cruce = df_cruce.to_csv(index=False, sep=";").encode('utf-8-sig')
                     st.download_button(
                         label="⬇️ Descargar Auditoría (CSV)", 
@@ -1983,8 +1976,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
-
-
+                
 
 
 
