@@ -1768,11 +1768,9 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                 from supabase import create_client, Client
                 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-                # Función inteligente para comparar ISINs (ES01 vs ES06)
                 def isin_coincide(i1, i2):
                     if not i1 or not i2: return False
                     if i1 == i2: return True
-                    # Si ambos son españoles y tienen longitud suficiente, comparamos su ADN (posiciones 4 a 8)
                     if i1.startswith("ES") and i2.startswith("ES") and len(i1) >= 9 and len(i2) >= 9:
                         return i1[4:9] == i2[4:9]
                     return False
@@ -1821,7 +1819,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                         mejor_pareja = None
                         for div_aeat in aeat_list:
                             if not div_aeat["comprobado"]:
-                                # 🎯 Usamos la función inteligente 'isin_coincide'
                                 if isin_coincide(div_ing["isin"], div_aeat["isin"]) and abs(div_aeat["bruto"] - div_ing["bruto"]) <= 0.02:
                                     mejor_pareja = div_aeat
                                     break 
@@ -1892,7 +1889,9 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
                     tot_bruto_consolidado = 0.0
                     tot_bruto_extranjero = 0.0
+                    
                     paises_excluidos = ["ESPAÑA", "ES", "", "REINO UNIDO", "UK", "GB", "UNITED KINGDOM", "GREAT BRITAIN"]
+                    paises_holanda = ["HOLANDA", "PAÍSES BAJOS", "PAISES BAJOS", "NL", "NETHERLANDS"]
                     
                     for _, row in df_cruce.iterrows():
                         if "Falta en" in row["Estado"]:
@@ -1900,9 +1899,16 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                         else:
                             tot_bruto_consolidado += row["Bruto_ING"]
                             
+                        # 🌍 Lógica actualizada para el Bruto Extranjero
                         pais_upper = str(row.get("Pais", "")).strip().upper()
                         if pais_upper not in paises_excluidos:
-                            tot_bruto_extranjero += row["Bruto_ING"]
+                            if pais_upper in paises_holanda:
+                                # Si es de Holanda, exigimos que la retención sea mayor que 0
+                                if row["Ret_ING"] > 0:
+                                    tot_bruto_extranjero += row["Bruto_ING"]
+                            else:
+                                # Resto de países extranjeros suman normal
+                                tot_bruto_extranjero += row["Bruto_ING"]
 
                     tot_bruto_añadir_aeat = df_cruce[df_cruce["Estado"] == "❌ Falta en AEAT"]["Bruto_ING"].sum()
                     tot_ret_recuperable = df_cruce["Ret_Recuperable_ING"].sum()
@@ -1918,7 +1924,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     col4.metric(
                         "Bruto Extranjero (Resto)", 
                         texto_extranjero, 
-                        help="Suma de los dividendos brutos cobrados en el extranjero, excluyendo España y Reino Unido."
+                        help="Suma de los dividendos brutos cobrados en el extranjero, excluyendo España, Reino Unido, y empresas holandesas sin retención (como Unilever)."
                     )
                     
                     st.markdown("<br>", unsafe_allow_html=True) 
@@ -1971,7 +1977,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
-
 
 
 
