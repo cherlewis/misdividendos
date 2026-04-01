@@ -2574,3 +2574,153 @@ elif opcion == "🕵️‍♂️ Auditoría Interna (ING)":
 
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
+
+
+
+
+# ==========================================
+# 🚀 APLICACIÓN: GESTOR MANUAL DE MOVIMIENTOS
+# ==========================================
+elif opcion == "✍️ Gestor Manual de Movimientos":
+    st.title("✍️ Gestor Manual de Movimientos")
+    st.write("Añade, edita o elimina dividendos manualmente en tu base de datos `MovimientosDividendos`.")
+
+    try:
+        from supabase import create_client, Client
+        supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+        
+        # Descargar los datos actuales para mostrarlos y poder seleccionarlos
+        res = supabase.table("MovimientosDividendos").select("*").order("fecha", desc=True).execute()
+        
+        import pandas as pd
+        df_movs = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+
+        # Creamos las pestañas de navegación
+        tab1, tab2, tab3, tab4 = st.tabs(["👀 Ver Datos", "➕ Añadir", "✏️ Editar", "🗑️ Borrar"])
+
+        # -------------------------------------------------------------
+        # PESTAÑA 1: VER DATOS
+        # -------------------------------------------------------------
+        with tab1:
+            st.subheader("Datos actuales en la Base de Datos")
+            if not df_movs.empty:
+                # Ordenamos las columnas para que se vean bonitas
+                cols_orden = ["id", "fecha", "empresa", "isin", "bruto_ing", "ret_origen_ing", "ret_destino_ing", "ejercicio_fiscal"]
+                # Filtramos solo las columnas que existen en el dataframe
+                cols_mostrar = [c for c in cols_orden if c in df_movs.columns]
+                st.dataframe(df_movs[cols_mostrar], use_container_width=True)
+            else:
+                st.info("ℹ️ La base de datos está vacía en este momento.")
+
+        # -------------------------------------------------------------
+        # PESTAÑA 2: AÑADIR UN REGISTRO
+        # -------------------------------------------------------------
+        with tab2:
+            st.subheader("➕ Añadir Nuevo Movimiento")
+            with st.form("form_add_movimiento", clear_on_submit=True):
+                col1, col2 = st.columns(2)
+                f_fecha = col1.date_input("📅 Fecha de abono")
+                f_empresa = col2.text_input("🏢 Empresa")
+                f_isin = col1.text_input("🆔 ISIN")
+                f_bruto = col2.number_input("💰 Importe Bruto (€)", min_value=0.0, step=0.01, format="%.2f")
+                f_ret_ori = col1.number_input("🌍 Retención Origen (€)", min_value=0.0, step=0.01, format="%.2f")
+                f_ret_des = col2.number_input("🇪🇸 Retención Destino (€)", min_value=0.0, step=0.01, format="%.2f")
+                
+                submitted_add = st.form_submit_button("Guardar Nuevo Movimiento", type="primary")
+                
+                if submitted_add:
+                    nuevo_registro = {
+                        "fecha": f_fecha.strftime("%Y-%m-%d"),
+                        "empresa": f_empresa.strip().upper(),
+                        "isin": f_isin.strip().upper(),
+                        "bruto_ing": float(f_bruto),
+                        "ret_origen_ing": float(f_ret_ori),
+                        "ret_destino_ing": float(f_ret_des),
+                        "ejercicio_fiscal": f_fecha.year
+                    }
+                    supabase.table("MovimientosDividendos").insert(nuevo_registro).execute()
+                    st.success("✅ Movimiento añadido correctamente. Refrescando...")
+                    import time; time.sleep(1)
+                    st.rerun() # Refresca la página para mostrar los datos nuevos
+
+        # -------------------------------------------------------------
+        # PESTAÑA 3: EDITAR UN REGISTRO
+        # -------------------------------------------------------------
+        with tab3:
+            st.subheader("✏️ Editar Movimiento Existente")
+            if not df_movs.empty:
+                # Crear una lista de opciones legible para el usuario
+                opciones_edit = df_movs.apply(lambda x: f"ID: {x['id']} | {x['fecha']} | {x['empresa']} | {x['bruto_ing']}€", axis=1).tolist()
+                seleccion_edit = st.selectbox("📌 Selecciona el movimiento que quieres editar:", opciones_edit, key="sel_edit")
+                
+                if seleccion_edit:
+                    id_seleccionado = int(seleccion_edit.split(" | ")[0].replace("ID: ", ""))
+                    fila_sel = df_movs[df_movs["id"] == id_seleccionado].iloc[0]
+                    
+                    with st.form("form_edit_movimiento"):
+                        from datetime import datetime
+                        fecha_defecto = datetime.strptime(fila_sel["fecha"], "%Y-%m-%d").date() if fila_sel["fecha"] else datetime.now().date()
+                        
+                        col1, col2 = st.columns(2)
+                        e_fecha = col1.date_input("📅 Fecha de abono", value=fecha_defecto)
+                        e_empresa = col2.text_input("🏢 Empresa", value=str(fila_sel.get("empresa", "")))
+                        e_isin = col1.text_input("🆔 ISIN", value=str(fila_sel.get("isin", "")))
+                        e_bruto = col2.number_input("💰 Importe Bruto (€)", value=float(fila_sel.get("bruto_ing", 0.0)), step=0.01, format="%.2f")
+                        e_ret_ori = col1.number_input("🌍 Retención Origen (€)", value=float(fila_sel.get("ret_origen_ing", 0.0)), step=0.01, format="%.2f")
+                        e_ret_des = col2.number_input("🇪🇸 Retención Destino (€)", value=float(fila_sel.get("ret_destino_ing", 0.0)), step=0.01, format="%.2f")
+                        
+                        submitted_edit = st.form_submit_button("💾 Guardar Cambios", type="primary")
+                        
+                        if submitted_edit:
+                            datos_actualizados = {
+                                "fecha": e_fecha.strftime("%Y-%m-%d"),
+                                "empresa": e_empresa.strip().upper(),
+                                "isin": e_isin.strip().upper(),
+                                "bruto_ing": float(e_bruto),
+                                "ret_origen_ing": float(e_ret_ori),
+                                "ret_destino_ing": float(e_ret_des),
+                                "ejercicio_fiscal": e_fecha.year
+                            }
+                            supabase.table("MovimientosDividendos").update(datos_actualizados).eq("id", id_seleccionado).execute()
+                            st.success("✅ Registro actualizado correctamente. Refrescando...")
+                            import time; time.sleep(1)
+                            st.rerun()
+            else:
+                st.info("ℹ️ No hay movimientos para editar.")
+
+        # -------------------------------------------------------------
+        # PESTAÑA 4: BORRAR REGISTROS
+        # -------------------------------------------------------------
+        with tab4:
+            st.subheader("🗑️ Borrar Movimiento a Mano")
+            if not df_movs.empty:
+                opciones_del = df_movs.apply(lambda x: f"ID: {x['id']} | {x['fecha']} | {x['empresa']} | {x['bruto_ing']}€", axis=1).tolist()
+                seleccion_del = st.selectbox("📌 Selecciona el movimiento a ELIMINAR:", opciones_del, key="sel_del")
+                
+                if st.button("❌ Eliminar Registro Seleccionado"):
+                    id_a_borrar = int(seleccion_del.split(" | ")[0].replace("ID: ", ""))
+                    supabase.table("MovimientosDividendos").delete().eq("id", id_a_borrar).execute()
+                    st.success("🗑️ Registro eliminado. Refrescando...")
+                    import time; time.sleep(1)
+                    st.rerun()
+                
+                st.markdown("---")
+                st.markdown("### 🚨 Zona de Peligro")
+                st.error("⚠️ Esta acción borrará **absolutamente todos** los datos de la tabla `MovimientosDividendos` y no se puede deshacer.")
+                
+                if st.button("🔥 BORRAR TODOS LOS DATOS", type="primary"):
+                    # Confirmación rápida
+                    supabase.table("MovimientosDividendos").delete().neq("id", -1).execute()
+                    st.success("💥 Base de datos limpiada por completo. Refrescando...")
+                    import time; time.sleep(1)
+                    st.rerun()
+            else:
+                st.info("ℹ️ La base de datos ya está vacía.")
+
+    except Exception as e:
+        st.error(f"❌ Error de conexión con la base de datos: {e}")
+
+
+
+
+
