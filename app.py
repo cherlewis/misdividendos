@@ -364,8 +364,52 @@ elif opcion == "📊 Dividendos a Excel":
             df_mostrar = pd.concat([df_mostrar, pd.DataFrame([fila_totales])], ignore_index=True)
             
             st.dataframe(df_mostrar)
-            csv = df_mostrar.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv, file_name='dividendos_enriquecidos.csv', mime='text/csv')
+            
+            # --- 🔘 BOTONES LADO A LADO ---
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                csv = df_mostrar.to_csv(index=False, sep=";").encode('utf-8-sig')
+                st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv, file_name='dividendos_enriquecidos.csv', mime='text/csv', use_container_width=True)
+                
+            with col2:
+                if st.button("☁️ Añadir datos a base de datos", type="primary", use_container_width=True):
+                    with st.spinner("Subiendo datos a MovimientosDividendos..."):
+                        try:
+                            from supabase import create_client, Client
+                            supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+                            
+                            registros_a_subir = []
+                            # Iteramos sobre el DF original de la caché (sin la fila de TOTALES)
+                            for _, row in st.session_state["divs_df"].iterrows(): 
+                                try:
+                                    dia, mes, anio = str(row["Fecha"]).split("/")
+                                    fecha_sql = f"{anio}-{mes}-{dia}"
+                                    ejercicio_fiscal = int(anio)
+                                except:
+                                    fecha_sql = None
+                                    ejercicio_fiscal = None
+                                
+                                bruto_ing = euro_a_numero(str(row["Importe Bruto"]))
+                                ret_origen = euro_a_numero(str(row["Ret. Origen"]))
+                                ret_destino = euro_a_numero(str(row["Ret. Destino"]))
+                                
+                                registros_a_subir.append({
+                                    "fecha": fecha_sql,
+                                    "empresa": str(row["NombreING"]),
+                                    "bruto_ing": bruto_ing,
+                                    "ret_origen_ing": ret_origen,
+                                    "ret_destino_ing": ret_destino,
+                                    "ejercicio_fiscal": ejercicio_fiscal
+                                })
+                            
+                            if registros_a_subir:
+                                supabase.table("MovimientosDividendos").insert(registros_a_subir).execute()
+                                st.success(f"✅ ¡{len(registros_a_subir)} movimientos añadidos correctamente a MovimientosDividendos!")
+                        except Exception as e:
+                            st.error(f"❌ Error al subir a la Base de Datos: {e}")
+
+
 
 
 
