@@ -397,11 +397,13 @@ elif opcion == "📊 Dividendos a Excel":
                                 registros_a_subir.append({
                                     "fecha": fecha_sql,
                                     "empresa": str(row["NombreING"]),
+                                    "isin": str(row["ISIN"]).strip(), # 🎯 AÑADIMOS EL DNI
                                     "bruto_ing": bruto_ing,
                                     "ret_origen_ing": ret_origen,
                                     "ret_destino_ing": ret_destino,
                                     "ejercicio_fiscal": ejercicio_fiscal
                                 })
+
                             
                             if registros_a_subir:
                                 supabase.table("MovimientosDividendos").insert(registros_a_subir).execute()
