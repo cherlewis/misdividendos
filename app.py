@@ -92,9 +92,13 @@ opcion = st.sidebar.radio(
         "📉 Calculadora Plusvalías (Hacienda)",
         "🏢 Gestor de Empresas (DB)",
         "⚖️ Auditoría Pro (DB)", # <--- La nueva joya
-        "🕵️‍♂️ Auditoría Interna (ING)"  # <--- ¡AQUÍ ESTÁ LA NUEVA!
+        "🕵️‍♂️ Auditoría Interna (ING)",  # <--- ¡AQUÍ ESTÁ LA NUEVA!
+        "✍️ Gestor Manual de Movimientos"  # <--- Añade esta línea
+
     ]
 )
+
+
 
 
 
