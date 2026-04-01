@@ -188,6 +188,8 @@ if opcion == "📊 Cuadro de Mando (Dashboard)":
 # ==========================================
 # 🚀 APLICACIÓN 1: DIVIDENDOS
 # ==========================================
+# 🚀 APLICACIÓN 1: DIVIDENDOS
+# ==========================================
 elif opcion == "📊 Dividendos a Excel":
     st.title("📄 Extractor de Dividendos a Excel")
     st.write("Sube tus PDFs de dividendos de ING. Optimizado para detectar importes 'totales' y fechas de abono.")
@@ -345,7 +347,7 @@ elif opcion == "📊 Dividendos a Excel":
             st.warning(f"⚠️ **Atención:** Hubo {len(st.session_state['divs_fallidos'])} archivo(s) que no se pudieron leer. Puede que estén corruptos o no sean de dividendos:\n\n{lista_fallos}")
 
         # ---------------------------------------------------------------------
-        # RENDERIZAR TABLA Y CONTROLES (Excel / BD)
+        # RENDERIZAR TABLA Y DESCARGA (CÓDIGO ORIGINAL INTACTO)
         # ---------------------------------------------------------------------
         if "divs_df" in st.session_state:
             df_mostrar = st.session_state["divs_df"].copy()
@@ -362,18 +364,18 @@ elif opcion == "📊 Dividendos a Excel":
             df_mostrar = pd.concat([df_mostrar, pd.DataFrame([fila_totales])], ignore_index=True)
             
             st.dataframe(df_mostrar)
-            
-            st.markdown("---")
-            st.write("### ⚙️ Acciones")
-            
-            # Dividimos los botones en 3 columnas
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                csv = df_mostrar.to_csv(index=False, sep=";").encode('utf-8-sig')
-                st.download_button(label="⬇️ Descargar Excel", data=csv, file_name='dividendos_enriquecidos.csv', mime='text/csv', use_container_width=True)
+            csv = df_mostrar.to_csv(index=False, sep=";").encode('utf-8-sig')
+            st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv, file_name='dividendos_enriquecidos.csv', mime='text/csv')
 
-            with col2:
+            # =====================================================================
+            # 🚀 NUEVO: CONTROL DE BASE DE DATOS (Añadido debajo sin romper el diseño anterior)
+            # =====================================================================
+            st.markdown("---")
+            st.write("### ☁️ Sincronización con Base de Datos")
+            
+            col_db1, col_db2 = st.columns(2)
+            
+            with col_db1:
                 if st.button("☁️ Subir a Base de Datos", type="primary", use_container_width=True):
                     with st.spinner("Subiendo datos a MovimientosDividendos..."):
                         try:
@@ -381,9 +383,8 @@ elif opcion == "📊 Dividendos a Excel":
                             supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
                             
                             registros_a_subir = []
-                            for _, row in st.session_state["divs_df"].iterrows(): # Usamos el DF original, no el que tiene "TOTALES"
-                                
-                                # Convertir fecha DD/MM/YYYY a YYYY-MM-DD para Supabase (tipo Date)
+                            # Usamos st.session_state["divs_df"] que es tu DF limpio sin la fila de "TOTALES"
+                            for _, row in st.session_state["divs_df"].iterrows(): 
                                 try:
                                     dia, mes, anio = row["Fecha"].split("/")
                                     fecha_sql = f"{anio}-{mes}-{dia}"
@@ -392,12 +393,10 @@ elif opcion == "📊 Dividendos a Excel":
                                     fecha_sql = None
                                     ejercicio_fiscal = None
                                 
-                                # Formatear importes usando tu función euro_a_numero (Devuelve float ideal para numeric(10,2))
                                 bruto_ing = euro_a_numero(str(row["Importe Bruto"]))
                                 ret_origen = euro_a_numero(str(row["Ret. Origen"]))
                                 ret_destino = euro_a_numero(str(row["Ret. Destino"]))
                                 
-                                # Solo enviamos las columnas de ING que tu esquema permite (las demás quedarán null)
                                 registros_a_subir.append({
                                     "fecha": fecha_sql,
                                     "empresa": str(row["NombreING"]),
@@ -409,17 +408,17 @@ elif opcion == "📊 Dividendos a Excel":
                             
                             if registros_a_subir:
                                 supabase.table("MovimientosDividendos").insert(registros_a_subir).execute()
-                                st.success(f"✅ ¡{len(registros_a_subir)} movimientos subidos correctamente!")
+                                st.success(f"✅ ¡{len(registros_a_subir)} movimientos subidos correctamente a MovimientosDividendos!")
                         except Exception as e:
                             st.error(f"❌ Error al subir a la Base de Datos: {e}")
 
-            with col3:
+            with col_db2:
                 if st.button("🗑️ Limpiar Base de Datos", type="secondary", use_container_width=True):
                     with st.spinner("Eliminando datos de MovimientosDividendos..."):
                         try:
                             from supabase import create_client, Client
                             supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-                            # El filtro .neq("id", -1) es un truco para poder borrar toda la tabla en Supabase
+                            # .neq("id", -1) es el truco técnico para borrar toda la tabla de golpe
                             supabase.table("MovimientosDividendos").delete().neq("id", -1).execute()
                             st.success("✅ ¡Tabla MovimientosDividendos limpiada por completo!")
                         except Exception as e:
