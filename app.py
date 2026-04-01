@@ -1894,6 +1894,10 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     tot_bruto_consolidado = 0.0
                     tot_bruto_extranjero = 0.0
                     
+                    # 🎯 LA LISTA NEGRA: Paises y empresas que NO sumarán al extranjero
+                    paises_excluidos = ["ESPAÑA", "ES", "", "REINO UNIDO", "UK", "GB", "UNITED KINGDOM", "GREAT BRITAIN"]
+                    empresas_excluidas = ["UNILEVER", "LYONDELLBASELL", "LYB"]
+                    
                     for _, row in df_cruce.iterrows():
                         # Lógica Consolidado
                         if "Falta en" in row["Estado"]:
@@ -1901,8 +1905,24 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                         else:
                             tot_bruto_consolidado += row["Bruto_ING"]
                             
-                        # 🎯 LÓGICA MÁXIMA EFICIENCIA: Solo suma si la Retención Recuperable es > 0
-                        if row.get("Ret_Recuperable_ING", 0.0) > 0:
+                        # Lógica Bruto Extranjero con Lista Negra
+                        pais_upper = str(row.get("Pais", "")).strip().upper()
+                        empresa_upper = str(row.get("Empresa", "")).strip().upper()
+                        
+                        es_excluida = False
+                        
+                        # 1. Comprobar si el país está excluido (España o UK)
+                        if pais_upper in paises_excluidos:
+                            es_excluida = True
+                            
+                        # 2. Comprobar si el nombre de la empresa está excluido (Unilever o LYB)
+                        for emp in empresas_excluidas:
+                            if emp in empresa_upper:
+                                es_excluida = True
+                                break
+                                
+                        # Si ha superado todos los filtros, lo sumamos
+                        if not es_excluida:
                             tot_bruto_extranjero += row["Bruto_ING"]
 
                     tot_bruto_añadir_aeat = df_cruce[df_cruce["Estado"] == "❌ Falta en AEAT"]["Bruto_ING"].sum()
@@ -1917,9 +1937,9 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     
                     texto_extranjero = f"{tot_bruto_extranjero:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
                     col4.metric(
-                        "Bruto Extranjero (Recuperable > 0)", 
+                        "Bruto Extranjero (Resto)", 
                         texto_extranjero, 
-                        help="Suma de los dividendos brutos donde la Retención Recuperable es mayor que 0."
+                        help="Suma de los dividendos brutos cobrados en el extranjero. Excluye: España, UK, Unilever y LyondellBasell."
                     )
                     
                     st.markdown("<br>", unsafe_allow_html=True) 
@@ -1951,11 +1971,12 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                     
                     cols_a_mostrar = [col for col in df_cruce.columns if col not in ["Pais", "Ret_Ori_ING"]]
                     
+                    # 🎯 SOLUCIONADO EL ERROR DE PANDAS: cambiado 'applymap' por 'map'
                     df_mostrar = df_cruce[cols_a_mostrar].style.format({
                         "Bruto_ING": "{:.2f} €", "Bruto_AEAT": "{:.2f} €", "Dif_Bruto": "{:.2f} €",
                         "Ret_ING": "{:.2f} €", "Ret_AEAT": "{:.2f} €", "Dif_Ret": "{:.2f} €",
                         "Ret_Recuperable_ING": "{:.2f} €" 
-                    }).applymap(
+                    }).map(
                         lambda x: f"color: {'#ff4b4b' if abs(x) > 0.10 else '#21c354'}", 
                         subset=["Dif_Bruto", "Dif_Ret"]
                     )
@@ -1972,6 +1993,7 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
+
 
 
 
