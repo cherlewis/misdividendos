@@ -187,7 +187,6 @@ if opcion == "📊 Cuadro de Mando (Dashboard)":
 
 # ==========================================
 # 🚀 APLICACIÓN 1: DIVIDENDOS
-Sigue sin funcionar, revisa el código de aqui abajo que funcionaba bien:
 # ==========================================
 # 🚀 APLICACIÓN 1: DIVIDENDOS
 # ==========================================
