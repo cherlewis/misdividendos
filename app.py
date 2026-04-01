@@ -345,7 +345,7 @@ elif opcion == "📊 Dividendos a Excel":
             st.warning(f"⚠️ **Atención:** Hubo {len(st.session_state['divs_fallidos'])} archivo(s) que no se pudieron leer. Puede que estén corruptos o no sean de dividendos:\n\n{lista_fallos}")
 
         # ---------------------------------------------------------------------
-        # RENDERIZAR TABLA Y DESCARGA
+        # RENDERIZAR TABLA Y CONTROLES (Excel / BD)
         # ---------------------------------------------------------------------
         if "divs_df" in st.session_state:
             df_mostrar = st.session_state["divs_df"].copy()
@@ -362,8 +362,71 @@ elif opcion == "📊 Dividendos a Excel":
             df_mostrar = pd.concat([df_mostrar, pd.DataFrame([fila_totales])], ignore_index=True)
             
             st.dataframe(df_mostrar)
-            csv = df_mostrar.to_csv(index=False, sep=";").encode('utf-8-sig')
-            st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv, file_name='dividendos_enriquecidos.csv', mime='text/csv')
+            
+            st.markdown("---")
+            st.write("### ⚙️ Acciones")
+            
+            # Dividimos los botones en 3 columnas
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                csv = df_mostrar.to_csv(index=False, sep=";").encode('utf-8-sig')
+                st.download_button(label="⬇️ Descargar Excel", data=csv, file_name='dividendos_enriquecidos.csv', mime='text/csv', use_container_width=True)
+
+            with col2:
+                if st.button("☁️ Subir a Base de Datos", type="primary", use_container_width=True):
+                    with st.spinner("Subiendo datos a MovimientosDividendos..."):
+                        try:
+                            from supabase import create_client, Client
+                            supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+                            
+                            registros_a_subir = []
+                            for _, row in st.session_state["divs_df"].iterrows(): # Usamos el DF original, no el que tiene "TOTALES"
+                                
+                                # Convertir fecha DD/MM/YYYY a YYYY-MM-DD para Supabase (tipo Date)
+                                try:
+                                    dia, mes, anio = row["Fecha"].split("/")
+                                    fecha_sql = f"{anio}-{mes}-{dia}"
+                                    ejercicio_fiscal = int(anio)
+                                except:
+                                    fecha_sql = None
+                                    ejercicio_fiscal = None
+                                
+                                # Formatear importes usando tu función euro_a_numero (Devuelve float ideal para numeric(10,2))
+                                bruto_ing = euro_a_numero(str(row["Importe Bruto"]))
+                                ret_origen = euro_a_numero(str(row["Ret. Origen"]))
+                                ret_destino = euro_a_numero(str(row["Ret. Destino"]))
+                                
+                                # Solo enviamos las columnas de ING que tu esquema permite (las demás quedarán null)
+                                registros_a_subir.append({
+                                    "fecha": fecha_sql,
+                                    "empresa": str(row["NombreING"]),
+                                    "bruto_ing": bruto_ing,
+                                    "ret_origen_ing": ret_origen,
+                                    "ret_destino_ing": ret_destino,
+                                    "ejercicio_fiscal": ejercicio_fiscal
+                                })
+                            
+                            if registros_a_subir:
+                                supabase.table("MovimientosDividendos").insert(registros_a_subir).execute()
+                                st.success(f"✅ ¡{len(registros_a_subir)} movimientos subidos correctamente!")
+                        except Exception as e:
+                            st.error(f"❌ Error al subir a la Base de Datos: {e}")
+
+            with col3:
+                if st.button("🗑️ Limpiar Base de Datos", type="secondary", use_container_width=True):
+                    with st.spinner("Eliminando datos de MovimientosDividendos..."):
+                        try:
+                            from supabase import create_client, Client
+                            supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+                            # El filtro .neq("id", -1) es un truco para poder borrar toda la tabla en Supabase
+                            supabase.table("MovimientosDividendos").delete().neq("id", -1).execute()
+                            st.success("✅ ¡Tabla MovimientosDividendos limpiada por completo!")
+                        except Exception as e:
+                            st.error(f"❌ Error al limpiar la tabla: {e}")
+
+
+
 
 
 
