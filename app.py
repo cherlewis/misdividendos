@@ -91,9 +91,12 @@ opcion = st.sidebar.radio(
         "⚖️ Auditoría Hacienda vs ING",
         "📉 Calculadora Plusvalías (Hacienda)",
         "🏢 Gestor de Empresas (DB)",
-        "⚖️ Auditoría Pro (DB)" # <--- La nueva joya
+        "⚖️ Auditoría Pro (DB)", # <--- La nueva joya
+        "🕵️‍♂️ Auditoría Interna (ING)"  # <--- ¡AQUÍ ESTÁ LA NUEVA!
     ]
 )
+
+
 
 
 
@@ -2368,4 +2371,206 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
 
 
 
+# ==========================================
+# 🚀 APLICACIÓN 11: AUDITORÍA INTERNA (ING vs MOVS)
+# ==========================================
+elif opcion == "🕵️‍♂️ Auditoría Interna (ING)":
+    st.title("🕵️‍♂️ Auditoría Interna (ING)")
+    st.write("Cruza los datos del **Informe Fiscal Anual de ING** con la suma de los **PDFs de Dividendos individuales**. Ahora potenciado con cruce exacto por ISIN.")
 
+    from datetime import datetime
+    import pandas as pd
+    anio_fiscal_defecto = datetime.now().year - 1
+
+    ejercicio_auditar = st.number_input(
+        "📅 ¿Qué Año Fiscal quieres auditar internamente?", 
+        min_value=2020, 
+        max_value=2050, 
+        value=anio_fiscal_defecto
+    )
+
+    st.markdown("---")
+
+    if st.button("🔍 Iniciar Auditoría Interna", type="primary", use_container_width=True):
+        with st.spinner(f"Cruzando Informe Fiscal vs Movimientos Individuales de {ejercicio_auditar}..."):
+            try:
+                from supabase import create_client, Client
+                supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+
+                # 🧠 Función de ADN para los ISINs
+                def isin_coincide(i1, i2):
+                    if not i1 or not i2: return False
+                    if i1 == i2: return True
+                    if i1.startswith("ES") and i2.startswith("ES") and len(i1) >= 9 and len(i2) >= 9:
+                        return i1[4:9] == i2[4:9]
+                    return False
+
+                # 1️⃣ DESCARGAR DATOS DE AMBAS TABLAS (AHORA CON ISIN)
+                res_inf = supabase.table("informefiscaling").select("id, isin, empresa, importe_bruto, retencion_destino, retencion_origen, concepto").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
+                res_movs = supabase.table("MovimientosDividendos").select("id, isin, empresa, bruto_ing, ret_origen_ing, ret_destino_ing, fecha").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
+
+                if not res_inf.data and not res_movs.data:
+                    st.warning(f"🤷‍♂️ No hay datos guardados en ninguna de las dos tablas para el año {ejercicio_auditar}.")
+                else:
+                    inf_list = []
+                    if res_inf.data:
+                        for row in res_inf.data:
+                            inf_list.append({
+                                "id": row["id"],
+                                "isin": str(row.get("isin", "")).strip().upper(),
+                                "empresa": str(row.get("empresa", "")).strip(),
+                                "bruto": round(float(row.get("importe_bruto", 0)), 2),
+                                "ret_des": round(float(row.get("retencion_destino", 0)), 2),
+                                "ret_ori": round(float(row.get("retencion_origen", 0)), 2),
+                                "comprobado": False
+                            })
+
+                    mov_list = []
+                    if res_movs.data:
+                        for row in res_movs.data:
+                            mov_list.append({
+                                "id": row["id"],
+                                "isin": str(row.get("isin", "")).strip().upper(),
+                                "fecha": str(row.get("fecha", "")),
+                                "empresa": str(row.get("empresa", "")).strip(),
+                                "bruto": round(float(row.get("bruto_ing", 0)), 2),
+                                "ret_des": round(float(row.get("ret_destino_ing", 0)), 2),
+                                "ret_ori": round(float(row.get("ret_origen_ing", 0)), 2),
+                                "comprobado": False
+                            })
+
+                    resultados = []
+
+                    for inf in inf_list:
+                        if inf["comprobado"]: continue
+                        
+                        mejor_pareja = None
+                        for mov in mov_list:
+                            if not mov["comprobado"]:
+                                # 🎯 CRUCE PERFECTO: Mismo ADN de ISIN y mismo Bruto
+                                if isin_coincide(inf["isin"], mov["isin"]) and abs(mov["bruto"] - inf["bruto"]) <= 0.02:
+                                    mejor_pareja = mov
+                                    break
+                        
+                        if mejor_pareja:
+                            inf["comprobado"] = True
+                            mejor_pareja["comprobado"] = True
+                            
+                            dif_b = inf["bruto"] - mejor_pareja["bruto"]
+                            dif_r_des = inf["ret_des"] - mejor_pareja["ret_des"]
+                            dif_r_ori = inf["ret_ori"] - mejor_pareja["ret_ori"]
+                            
+                            if abs(dif_b) <= 0.05 and abs(dif_r_des) <= 0.05 and abs(dif_r_ori) <= 0.05:
+                                estado = "✅ Ok"
+                            else:
+                                estado = "⚠️ Descuadre Ret."
+                                
+                            resultados.append({
+                                "Estado": estado,
+                                "ISIN": inf["isin"],
+                                "Empresa": inf["empresa"],
+                                "Bruto_Inf": inf["bruto"],
+                                "Bruto_Mov": mejor_pareja["bruto"],
+                                "Dif_Bruto": dif_b,
+                                "Ret_Des_Inf": inf["ret_des"],
+                                "Ret_Des_Mov": mejor_pareja["ret_des"],
+                                "Dif_Ret_Des": dif_r_des,
+                                "Ret_Ori_Inf": inf["ret_ori"],
+                                "Ret_Ori_Mov": mejor_pareja["ret_ori"],
+                                "Dif_Ret_Ori": dif_r_ori
+                            })
+                        else:
+                            resultados.append({
+                                "Estado": "❌ Falta en Movimientos (PDF)",
+                                "ISIN": inf["isin"],
+                                "Empresa": inf["empresa"],
+                                "Bruto_Inf": inf["bruto"],
+                                "Bruto_Mov": 0.0,
+                                "Dif_Bruto": inf["bruto"],
+                                "Ret_Des_Inf": inf["ret_des"],
+                                "Ret_Des_Mov": 0.0,
+                                "Dif_Ret_Des": inf["ret_des"],
+                                "Ret_Ori_Inf": inf["ret_ori"],
+                                "Ret_Ori_Mov": 0.0,
+                                "Dif_Ret_Ori": inf["ret_ori"]
+                            })
+                            
+                    for mov in mov_list:
+                        if not mov["comprobado"]:
+                            resultados.append({
+                                "Estado": "❌ Falta en Informe Fiscal",
+                                "ISIN": mov["isin"],
+                                "Empresa": mov["empresa"],
+                                "Bruto_Inf": 0.0,
+                                "Bruto_Mov": mov["bruto"],
+                                "Dif_Bruto": -mov["bruto"],
+                                "Ret_Des_Inf": 0.0,
+                                "Ret_Des_Mov": mov["ret_des"],
+                                "Dif_Ret_Des": -mov["ret_des"],
+                                "Ret_Ori_Inf": 0.0,
+                                "Ret_Ori_Mov": mov["ret_ori"],
+                                "Dif_Ret_Ori": -mov["ret_ori"]
+                            })
+                            
+                    # 5️⃣ RENDERIZADO VISUAL
+                    df_cruce = pd.DataFrame(resultados)
+                    df_cruce = df_cruce.sort_values(by=["Estado", "Empresa"], ascending=[False, True])
+
+                    st.subheader("🎯 Resumen de la Auditoría Interna")
+                    
+                    tot_bruto_inf = df_cruce["Bruto_Inf"].sum()
+                    tot_bruto_mov = df_cruce["Bruto_Mov"].sum()
+                    dif_global_bruto = tot_bruto_inf - tot_bruto_mov
+                    
+                    tot_ret_des_inf = df_cruce["Ret_Des_Inf"].sum()
+                    tot_ret_des_mov = df_cruce["Ret_Des_Mov"].sum()
+                    dif_global_ret_des = tot_ret_des_inf - tot_ret_des_mov
+
+                    tot_ret_ori_inf = df_cruce["Ret_Ori_Inf"].sum()
+                    tot_ret_ori_mov = df_cruce["Ret_Ori_Mov"].sum()
+                    dif_global_ret_ori = tot_ret_ori_inf - tot_ret_ori_mov
+
+                    st.markdown("##### 💰 Importe Bruto")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Bruto (Informe Fiscal)", f"{tot_bruto_inf:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
+                    c2.metric("Bruto (Movimientos)", f"{tot_bruto_mov:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
+                    color_d_b = "normal" if abs(dif_global_bruto) <= 1 else "inverse"
+                    c3.metric("Descuadre Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_d_b)
+                    
+                    st.markdown("##### 🇪🇸 Retención en Destino (España)")
+                    c4, c5, c6 = st.columns(3)
+                    c4.metric("Ret. Destino (Informe Fiscal)", f"{tot_ret_des_inf:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
+                    c5.metric("Ret. Destino (Movimientos)", f"{tot_ret_des_mov:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
+                    color_d_rd = "normal" if abs(dif_global_ret_des) <= 1 else "inverse"
+                    c6.metric("Descuadre Ret. Destino", f"{dif_global_ret_des:,.2f} €", delta=round(dif_global_ret_des, 2), delta_color=color_d_rd)
+
+                    st.markdown("##### 🌍 Retención en Origen (Extranjero)")
+                    c7, c8, c9 = st.columns(3)
+                    c7.metric("Ret. Origen (Informe Fiscal)", f"{tot_ret_ori_inf:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
+                    c8.metric("Ret. Origen (Movimientos)", f"{tot_ret_ori_mov:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
+                    color_d_ro = "normal" if abs(dif_global_ret_ori) <= 1 else "inverse"
+                    c9.metric("Descuadre Ret. Origen", f"{dif_global_ret_ori:,.2f} €", delta=round(dif_global_ret_ori, 2), delta_color=color_d_ro)
+
+                    st.markdown("### 🔍 Detalle Dividendo a Dividendo")
+                    
+                    df_mostrar = df_cruce.style.format({
+                        "Bruto_Inf": "{:.2f} €", "Bruto_Mov": "{:.2f} €", "Dif_Bruto": "{:.2f} €",
+                        "Ret_Des_Inf": "{:.2f} €", "Ret_Des_Mov": "{:.2f} €", "Dif_Ret_Des": "{:.2f} €",
+                        "Ret_Ori_Inf": "{:.2f} €", "Ret_Ori_Mov": "{:.2f} €", "Dif_Ret_Ori": "{:.2f} €"
+                    }).map(
+                        lambda x: f"color: {'#ff4b4b' if abs(x) > 0.10 else '#21c354'}", 
+                        subset=["Dif_Bruto", "Dif_Ret_Des", "Dif_Ret_Ori"]
+                    )
+                    
+                    st.dataframe(df_mostrar, use_container_width=True, height=600)
+
+                    csv_cruce = df_cruce.to_csv(index=False, sep=";").encode('utf-8-sig')
+                    st.download_button(
+                        label="⬇️ Descargar Auditoría Interna (CSV)", 
+                        data=csv_cruce, 
+                        file_name=f"Auditoria_Interna_ING_{ejercicio_auditar}.csv", 
+                        mime='text/csv'
+                    )
+
+            except Exception as e:
+                st.error(f"❌ Error interno al realizar la auditoría: {e}")
