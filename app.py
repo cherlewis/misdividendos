@@ -2638,52 +2638,64 @@ elif opcion == "🕵️‍♂️ Auditoría Interna (ING)":
 # ==========================================
 elif opcion == "✍️ Gestor Manual de Movimientos":
     st.title("✍️ Gestor Manual de Movimientos")
-    st.write("Añade, edita o elimina dividendos manualmente en tu base de datos `MovimientosDividendos`.")
+    st.write("Gestiona tus dividendos manualmente. Selecciona un año para filtrar la vista y los totales.")
 
     try:
         from supabase import create_client, Client
         supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
         
-        # Descargar los datos actuales
-        res = supabase.table("MovimientosDividendos").select("*").order("fecha", desc=True).execute()
+        # 1️⃣ Descargar TODOS los datos primero para saber qué años existen
+        res_all = supabase.table("MovimientosDividendos").select("ejercicio_fiscal").execute()
         
+        # Extraer años únicos para el filtro
         import pandas as pd
+        if res_all.data:
+            años_disponibles = sorted(list(set([row['ejercicio_fiscal'] for row in res_all.data if row['ejercicio_fiscal']])), reverse=True)
+        else:
+            años_disponibles = [datetime.now().year]
+
+        # 🎯 FILTRO GLOBAL POR AÑO FISCAL
+        col_f1, col_f2 = st.columns([1, 2])
+        año_seleccionado = col_f1.selectbox("📅 Filtrar por Año Fiscal:", ["Todos"] + años_disponibles)
+
+        # 2️⃣ Descargar los datos filtrados (o todos)
+        query = supabase.table("MovimientosDividendos").select("*").order("fecha", desc=True)
+        if año_seleccionado != "Todos":
+            query = query.eq("ejercicio_fiscal", año_seleccionado)
+        
+        res = query.execute()
         df_movs = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+
+        st.markdown("---")
 
         tab1, tab2, tab3, tab4 = st.tabs(["👀 Ver Datos", "➕ Añadir", "✏️ Editar", "🗑️ Borrar"])
 
         # -------------------------------------------------------------
-        # PESTAÑA 1: VER DATOS (CON TOTALES)
+        # PESTAÑA 1: VER DATOS (CON FILTRO Y TOTALES)
         # -------------------------------------------------------------
         with tab1:
-            st.subheader("Datos actuales en la Base de Datos")
+            st.subheader(f"Movimientos registrados: {año_seleccionado}")
             if not df_movs.empty:
                 cols_orden = ["id", "fecha", "empresa", "concepto", "isin", "bruto_ing", "ret_origen_ing", "ret_destino_ing", "ejercicio_fiscal"]
                 cols_mostrar = [c for c in cols_orden if c in df_movs.columns]
                 
-                # Creamos una copia para visualización
                 df_display = df_movs[cols_mostrar].copy()
                 
-                # --- CÁLCULO DE TOTALES ---
+                # CÁLCULO DE TOTALES
                 fila_totales = {col: "" for col in df_display.columns}
                 fila_totales["fecha"] = "TOTALES"
-                
-                # Sumamos las columnas numéricas de interés
                 for col in ["bruto_ing", "ret_origen_ing", "ret_destino_ing"]:
                     if col in df_display.columns:
-                        # Aseguramos que sea numérico por si hay algún null
                         suma = pd.to_numeric(df_display[col], errors='coerce').sum()
                         fila_totales[col] = round(suma, 2)
                 
-                # Concatenamos la fila de totales al final
                 df_final = pd.concat([df_display, pd.DataFrame([fila_totales])], ignore_index=True)
-                
                 st.dataframe(df_final, use_container_width=True)
             else:
-                st.info("ℹ️ La base de datos está vacía en este momento.")
+                st.info(f"ℹ️ No hay datos para el año {año_seleccionado}.")
 
         # -------------------------------------------------------------
-        # PESTAÑA 2: AÑADIR UN REGISTRO (ACEPTA NEGATIVOS)
+        # PESTAÑA 2: AÑADIR
         # -------------------------------------------------------------
         with tab2:
             st.subheader("➕ Añadir Nuevo Movimiento")
@@ -2693,7 +2705,6 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                 f_empresa = col2.text_input("🏢 Empresa")
                 f_isin = col1.text_input("🆔 ISIN")
                 f_concepto = col2.text_input("📝 Concepto", value="DIVIDENDO")
-                # 🎯 Quitamos min_value para permitir negativos
                 f_bruto = col1.number_input("💰 Importe Bruto (€)", step=0.01, format="%.2f")
                 f_ret_ori = col2.number_input("🌍 Retención Origen (€)", min_value=0.0, step=0.01, format="%.2f")
                 f_ret_des = col1.number_input("🇪🇸 Retención Destino (€)", min_value=0.0, step=0.01, format="%.2f")
@@ -2712,40 +2723,37 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                         "ejercicio_fiscal": f_fecha.year
                     }
                     supabase.table("MovimientosDividendos").insert(nuevo_registro).execute()
-                    st.success("✅ Movimiento añadido correctamente.")
+                    st.success("✅ Añadido. Refrescando...")
                     import time; time.sleep(1); st.rerun()
 
         # -------------------------------------------------------------
-        # PESTAÑA 3: EDITAR UN REGISTRO (ACEPTA NEGATIVOS)
+        # PESTAÑA 3: EDITAR (SOLO LOS DEL AÑO FILTRADO)
         # -------------------------------------------------------------
         with tab3:
-            st.subheader("✏️ Editar Movimiento Existente")
+            st.subheader(f"✏️ Editar Movimiento ({año_seleccionado})")
             if not df_movs.empty:
                 opciones_edit = df_movs.apply(lambda x: f"ID: {x['id']} | {x['fecha']} | {x['empresa']} | {x['bruto_ing']}€", axis=1).tolist()
-                seleccion_edit = st.selectbox("📌 Selecciona el movimiento que quieres editar:", opciones_edit, key="sel_edit")
+                seleccion_edit = st.selectbox("📌 Selecciona para editar:", opciones_edit)
                 
                 if seleccion_edit:
-                    id_seleccionado = int(seleccion_edit.split(" | ")[0].replace("ID: ", ""))
-                    fila_sel = df_movs[df_movs["id"] == id_seleccionado].iloc[0]
+                    id_sel = int(seleccion_edit.split(" | ")[0].replace("ID: ", ""))
+                    fila = df_movs[df_movs["id"] == id_sel].iloc[0]
                     
                     with st.form("form_edit_movimiento"):
                         from datetime import datetime
-                        fecha_defecto = datetime.strptime(fila_sel["fecha"], "%Y-%m-%d").date() if fila_sel["fecha"] else datetime.now().date()
+                        f_def = datetime.strptime(fila["fecha"], "%Y-%m-%d").date() if fila["fecha"] else datetime.now().date()
                         
-                        col1, col2 = st.columns(2)
-                        e_fecha = col1.date_input("📅 Fecha de abono", value=fecha_defecto)
-                        e_empresa = col2.text_input("🏢 Empresa", value=str(fila_sel.get("empresa", "")))
-                        e_isin = col1.text_input("🆔 ISIN", value=str(fila_sel.get("isin", "")))
-                        e_concepto = col2.text_input("📝 Concepto", value=str(fila_sel.get("concepto", "DIVIDENDO")))
-                        # 🎯 Quitamos min_value para permitir editar negativos
-                        e_bruto = col1.number_input("💰 Importe Bruto (€)", value=float(fila_sel.get("bruto_ing", 0.0)), step=0.01, format="%.2f")
-                        e_ret_ori = col2.number_input("🌍 Retención Origen (€)", value=float(fila_sel.get("ret_origen_ing", 0.0)), step=0.01, format="%.2f")
-                        e_ret_des = col1.number_input("🇪🇸 Retención Destino (€)", value=float(fila_sel.get("ret_destino_ing", 0.0)), step=0.01, format="%.2f")
+                        c1, c2 = st.columns(2)
+                        e_fecha = c1.date_input("📅 Fecha", value=f_def)
+                        e_empresa = c2.text_input("🏢 Empresa", value=str(fila.get("empresa", "")))
+                        e_isin = c1.text_input("🆔 ISIN", value=str(fila.get("isin", "")))
+                        e_concepto = c2.text_input("📝 Concepto", value=str(fila.get("concepto", "DIVIDENDO")))
+                        e_bruto = c1.number_input("💰 Bruto (€)", value=float(fila.get("bruto_ing", 0.0)), step=0.01, format="%.2f")
+                        e_ret_ori = c2.number_input("🌍 Ret. Origen (€)", value=float(fila.get("ret_origen_ing", 0.0)), step=0.01, format="%.2f")
+                        e_ret_des = c1.number_input("🇪🇸 Ret. Destino (€)", value=float(fila_sel.get("ret_destino_ing", 0.0)), step=0.01, format="%.2f")
                         
-                        submitted_edit = st.form_submit_button("💾 Guardar Cambios", type="primary")
-                        
-                        if submitted_edit:
-                            datos_actualizados = {
+                        if st.form_submit_button("💾 Guardar Cambios", type="primary"):
+                            upd = {
                                 "fecha": e_fecha.strftime("%Y-%m-%d"),
                                 "empresa": e_empresa.strip().upper(),
                                 "isin": e_isin.strip().upper(),
@@ -2755,35 +2763,35 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                                 "ret_destino_ing": float(e_ret_des),
                                 "ejercicio_fiscal": e_fecha.year
                             }
-                            supabase.table("MovimientosDividendos").update(datos_actualizados).eq("id", id_seleccionado).execute()
-                            st.success("✅ Registro actualizado.")
-                            import time; time.sleep(1); st.rerun()
+                            supabase.table("MovimientosDividendos").update(upd).eq("id", id_sel).execute()
+                            st.success("✅ Actualizado."); time.sleep(1); st.rerun()
             else:
-                st.info("ℹ️ No hay movimientos para editar.")
+                st.info("ℹ️ Nada que editar aquí.")
 
         # -------------------------------------------------------------
-        # PESTAÑA 4: BORRAR REGISTROS
+        # PESTAÑA 4: BORRAR
         # -------------------------------------------------------------
         with tab4:
-            st.subheader("🗑️ Borrar Movimiento a Mano")
+            st.subheader(f"🗑️ Borrar Movimiento ({año_seleccionado})")
             if not df_movs.empty:
                 opciones_del = df_movs.apply(lambda x: f"ID: {x['id']} | {x['fecha']} | {x['empresa']} | {x['bruto_ing']}€", axis=1).tolist()
-                seleccion_del = st.selectbox("📌 Selecciona el movimiento a ELIMINAR:", opciones_del, key="sel_del")
+                sel_del = st.selectbox("📌 Selecciona para borrar:", opciones_del)
                 
-                if st.button("❌ Eliminar Registro Seleccionado"):
-                    id_a_borrar = int(seleccion_del.split(" | ")[0].replace("ID: ", ""))
-                    supabase.table("MovimientosDividendos").delete().eq("id", id_a_borrar).execute()
-                    st.success("🗑️ Registro eliminado.")
-                    import time; time.sleep(1); st.rerun()
+                if st.button("❌ Eliminar Registro"):
+                    id_del = int(sel_del.split(" | ")[0].replace("ID: ", ""))
+                    supabase.table("MovimientosDividendos").delete().eq("id", id_del).execute()
+                    st.success("🗑️ Eliminado."); time.sleep(1); st.rerun()
                 
                 st.markdown("---")
-                st.markdown("### 🚨 Zona de Peligro")
-                if st.button("🔥 BORRAR TODOS LOS DATOS", type="primary"):
-                    supabase.table("MovimientosDividendos").delete().neq("id", -1).execute()
-                    st.success("💥 Base de datos limpiada.")
-                    import time; time.sleep(1); st.rerun()
+                st.markdown("### 🚨 Peligro: Borrado Masivo")
+                if st.button(f"🔥 BORRAR TODO EL AÑO {año_seleccionado}"):
+                    if año_seleccionado == "Todos":
+                        supabase.table("MovimientosDividendos").delete().neq("id", -1).execute()
+                    else:
+                        supabase.table("MovimientosDividendos").delete().eq("ejercicio_fiscal", año_seleccionado).execute()
+                    st.success("💥 Limpieza completada."); time.sleep(1); st.rerun()
             else:
-                st.info("ℹ️ La base de datos ya está vacía.")
+                st.info("ℹ️ No hay datos para borrar.")
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
