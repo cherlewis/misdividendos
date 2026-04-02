@@ -2012,18 +2012,13 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
                         empresa_upper = str(row.get("Empresa", "")).strip().upper()
                         
                         es_excluida = False
-                        
-                        # 1. Comprobar si el país está excluido (España o UK)
                         if pais_upper in paises_excluidos:
                             es_excluida = True
-                            
-                        # 2. Comprobar si el nombre de la empresa está excluido (Unilever o LYB)
                         for emp in empresas_excluidas:
                             if emp in empresa_upper:
                                 es_excluida = True
                                 break
                                 
-                        # Si ha superado todos los filtros, lo sumamos
                         if not es_excluida:
                             tot_bruto_extranjero += row["Bruto_ING"]
 
@@ -2071,21 +2066,34 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
                     st.markdown("### 🔍 Detalle Dividendo a Dividendo")
                     
+                    # 🎯 PREPARAR TABLA VISUAL Y AÑADIR TOTALES
                     cols_a_mostrar = [col for col in df_cruce.columns if col not in ["Pais", "Ret_Ori_ING"]]
+                    df_visual = df_cruce[cols_a_mostrar].copy()
+
+                    fila_totales = {col: "" for col in df_visual.columns}
+                    fila_totales["Estado"] = "TOTALES"
                     
-                    # 🎯 SOLUCIONADO EL ERROR DE PANDAS: cambiado 'applymap' por 'map'
-                    df_mostrar = df_cruce[cols_a_mostrar].style.format({
+                    cols_sumar = ["Bruto_ING", "Bruto_AEAT", "Dif_Bruto", "Ret_ING", "Ret_AEAT", "Dif_Ret", "Ret_Recuperable_ING"]
+                    for col in cols_sumar:
+                        if col in df_visual.columns:
+                            fila_totales[col] = df_visual[col].sum()
+                            
+                    df_visual = pd.concat([df_visual, pd.DataFrame([fila_totales])], ignore_index=True)
+
+                    # Aplicar estilos con map
+                    df_mostrar = df_visual.style.format({
                         "Bruto_ING": "{:.2f} €", "Bruto_AEAT": "{:.2f} €", "Dif_Bruto": "{:.2f} €",
                         "Ret_ING": "{:.2f} €", "Ret_AEAT": "{:.2f} €", "Dif_Ret": "{:.2f} €",
                         "Ret_Recuperable_ING": "{:.2f} €" 
                     }).map(
-                        lambda x: f"color: {'#ff4b4b' if abs(x) > 0.10 else '#21c354'}", 
+                        lambda x: f"color: {'#ff4b4b' if pd.notna(x) and abs(float(x)) > 0.10 else '#21c354'}", 
                         subset=["Dif_Bruto", "Dif_Ret"]
                     )
                     
                     st.dataframe(df_mostrar, use_container_width=True, height=600)
 
-                    csv_cruce = df_cruce.to_csv(index=False, sep=";").encode('utf-8-sig')
+                    # 🎯 Descarga usando el dataframe que ya incluye la fila de totales
+                    csv_cruce = df_visual.to_csv(index=False, sep=";").encode('utf-8-sig')
                     st.download_button(
                         label="⬇️ Descargar Auditoría (CSV)", 
                         data=csv_cruce, 
@@ -2095,8 +2103,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
-
-
 
 
 
