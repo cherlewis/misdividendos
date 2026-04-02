@@ -2677,7 +2677,7 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                 f_empresa = col2.text_input("🏢 Empresa")
                 f_isin = col1.text_input("🆔 ISIN")
                 f_concepto = col2.text_input("📝 Concepto", value="DIVIDENDO") # 🎯 NUEVO CAMPO
-                f_bruto = col1.number_input("💰 Importe Bruto (€)", min_value=0.0, step=0.01, format="%.2f")
+                f_bruto = col1.number_input("💰 Importe Bruto (€)", step=0.01, format="%.2f")
                 f_ret_ori = col2.number_input("🌍 Retención Origen (€)", min_value=0.0, step=0.01, format="%.2f")
                 f_ret_des = col1.number_input("🇪🇸 Retención Destino (€)", min_value=0.0, step=0.01, format="%.2f")
                 
