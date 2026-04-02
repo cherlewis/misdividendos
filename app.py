@@ -2633,6 +2633,7 @@ elif opcion == "🕵️‍♂️ Auditoría Interna (ING)":
 # ==========================================
 # 🚀 APLICACIÓN: GESTOR MANUAL DE MOVIMIENTOS
 # ==========================================
+# ==========================================
 # 🚀 APLICACIÓN: GESTOR MANUAL DE MOVIMIENTOS
 # ==========================================
 elif opcion == "✍️ Gestor Manual de Movimientos":
@@ -2643,31 +2644,46 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
         from supabase import create_client, Client
         supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
         
-        # Descargar los datos actuales para mostrarlos y poder seleccionarlos
+        # Descargar los datos actuales
         res = supabase.table("MovimientosDividendos").select("*").order("fecha", desc=True).execute()
         
         import pandas as pd
         df_movs = pd.DataFrame(res.data) if res.data else pd.DataFrame()
 
-        # Creamos las pestañas de navegación
         tab1, tab2, tab3, tab4 = st.tabs(["👀 Ver Datos", "➕ Añadir", "✏️ Editar", "🗑️ Borrar"])
 
         # -------------------------------------------------------------
-        # PESTAÑA 1: VER DATOS
+        # PESTAÑA 1: VER DATOS (CON TOTALES)
         # -------------------------------------------------------------
         with tab1:
             st.subheader("Datos actuales en la Base de Datos")
             if not df_movs.empty:
-                # 🎯 Añadido 'concepto' al orden visual de la tabla
                 cols_orden = ["id", "fecha", "empresa", "concepto", "isin", "bruto_ing", "ret_origen_ing", "ret_destino_ing", "ejercicio_fiscal"]
-                # Filtramos solo las columnas que existen en el dataframe
                 cols_mostrar = [c for c in cols_orden if c in df_movs.columns]
-                st.dataframe(df_movs[cols_mostrar], use_container_width=True)
+                
+                # Creamos una copia para visualización
+                df_display = df_movs[cols_mostrar].copy()
+                
+                # --- CÁLCULO DE TOTALES ---
+                fila_totales = {col: "" for col in df_display.columns}
+                fila_totales["fecha"] = "TOTALES"
+                
+                # Sumamos las columnas numéricas de interés
+                for col in ["bruto_ing", "ret_origen_ing", "ret_destino_ing"]:
+                    if col in df_display.columns:
+                        # Aseguramos que sea numérico por si hay algún null
+                        suma = pd.to_numeric(df_display[col], errors='coerce').sum()
+                        fila_totales[col] = round(suma, 2)
+                
+                # Concatenamos la fila de totales al final
+                df_final = pd.concat([df_display, pd.DataFrame([fila_totales])], ignore_index=True)
+                
+                st.dataframe(df_final, use_container_width=True)
             else:
                 st.info("ℹ️ La base de datos está vacía en este momento.")
 
         # -------------------------------------------------------------
-        # PESTAÑA 2: AÑADIR UN REGISTRO
+        # PESTAÑA 2: AÑADIR UN REGISTRO (ACEPTA NEGATIVOS)
         # -------------------------------------------------------------
         with tab2:
             st.subheader("➕ Añadir Nuevo Movimiento")
@@ -2676,7 +2692,8 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                 f_fecha = col1.date_input("📅 Fecha de abono")
                 f_empresa = col2.text_input("🏢 Empresa")
                 f_isin = col1.text_input("🆔 ISIN")
-                f_concepto = col2.text_input("📝 Concepto", value="DIVIDENDO") # 🎯 NUEVO CAMPO
+                f_concepto = col2.text_input("📝 Concepto", value="DIVIDENDO")
+                # 🎯 Quitamos min_value para permitir negativos
                 f_bruto = col1.number_input("💰 Importe Bruto (€)", step=0.01, format="%.2f")
                 f_ret_ori = col2.number_input("🌍 Retención Origen (€)", min_value=0.0, step=0.01, format="%.2f")
                 f_ret_des = col1.number_input("🇪🇸 Retención Destino (€)", min_value=0.0, step=0.01, format="%.2f")
@@ -2688,24 +2705,22 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                         "fecha": f_fecha.strftime("%Y-%m-%d"),
                         "empresa": f_empresa.strip().upper(),
                         "isin": f_isin.strip().upper(),
-                        "concepto": f_concepto.strip().upper(), # 🎯 GUARDADO EN BD
+                        "concepto": f_concepto.strip().upper(),
                         "bruto_ing": float(f_bruto),
                         "ret_origen_ing": float(f_ret_ori),
                         "ret_destino_ing": float(f_ret_des),
                         "ejercicio_fiscal": f_fecha.year
                     }
                     supabase.table("MovimientosDividendos").insert(nuevo_registro).execute()
-                    st.success("✅ Movimiento añadido correctamente. Refrescando...")
-                    import time; time.sleep(1)
-                    st.rerun() # Refresca la página para mostrar los datos nuevos
+                    st.success("✅ Movimiento añadido correctamente.")
+                    import time; time.sleep(1); st.rerun()
 
         # -------------------------------------------------------------
-        # PESTAÑA 3: EDITAR UN REGISTRO
+        # PESTAÑA 3: EDITAR UN REGISTRO (ACEPTA NEGATIVOS)
         # -------------------------------------------------------------
         with tab3:
             st.subheader("✏️ Editar Movimiento Existente")
             if not df_movs.empty:
-                # Crear una lista de opciones legible para el usuario
                 opciones_edit = df_movs.apply(lambda x: f"ID: {x['id']} | {x['fecha']} | {x['empresa']} | {x['bruto_ing']}€", axis=1).tolist()
                 seleccion_edit = st.selectbox("📌 Selecciona el movimiento que quieres editar:", opciones_edit, key="sel_edit")
                 
@@ -2721,14 +2736,8 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                         e_fecha = col1.date_input("📅 Fecha de abono", value=fecha_defecto)
                         e_empresa = col2.text_input("🏢 Empresa", value=str(fila_sel.get("empresa", "")))
                         e_isin = col1.text_input("🆔 ISIN", value=str(fila_sel.get("isin", "")))
-                        
-                        # 🎯 Rescatamos el concepto o ponemos "DIVIDENDO" si venía vacío
-                        valor_concepto = str(fila_sel.get("concepto", ""))
-                        if valor_concepto == "None" or not valor_concepto.strip():
-                            valor_concepto = "DIVIDENDO"
-                            
-                        e_concepto = col2.text_input("📝 Concepto", value=valor_concepto) # 🎯 NUEVO CAMPO
-                        
+                        e_concepto = col2.text_input("📝 Concepto", value=str(fila_sel.get("concepto", "DIVIDENDO")))
+                        # 🎯 Quitamos min_value para permitir editar negativos
                         e_bruto = col1.number_input("💰 Importe Bruto (€)", value=float(fila_sel.get("bruto_ing", 0.0)), step=0.01, format="%.2f")
                         e_ret_ori = col2.number_input("🌍 Retención Origen (€)", value=float(fila_sel.get("ret_origen_ing", 0.0)), step=0.01, format="%.2f")
                         e_ret_des = col1.number_input("🇪🇸 Retención Destino (€)", value=float(fila_sel.get("ret_destino_ing", 0.0)), step=0.01, format="%.2f")
@@ -2740,16 +2749,15 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                                 "fecha": e_fecha.strftime("%Y-%m-%d"),
                                 "empresa": e_empresa.strip().upper(),
                                 "isin": e_isin.strip().upper(),
-                                "concepto": e_concepto.strip().upper(), # 🎯 ACTUALIZADO EN BD
+                                "concepto": e_concepto.strip().upper(),
                                 "bruto_ing": float(e_bruto),
                                 "ret_origen_ing": float(e_ret_ori),
                                 "ret_destino_ing": float(e_ret_des),
                                 "ejercicio_fiscal": e_fecha.year
                             }
                             supabase.table("MovimientosDividendos").update(datos_actualizados).eq("id", id_seleccionado).execute()
-                            st.success("✅ Registro actualizado correctamente. Refrescando...")
-                            import time; time.sleep(1)
-                            st.rerun()
+                            st.success("✅ Registro actualizado.")
+                            import time; time.sleep(1); st.rerun()
             else:
                 st.info("ℹ️ No hay movimientos para editar.")
 
@@ -2765,25 +2773,23 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                 if st.button("❌ Eliminar Registro Seleccionado"):
                     id_a_borrar = int(seleccion_del.split(" | ")[0].replace("ID: ", ""))
                     supabase.table("MovimientosDividendos").delete().eq("id", id_a_borrar).execute()
-                    st.success("🗑️ Registro eliminado. Refrescando...")
-                    import time; time.sleep(1)
-                    st.rerun()
+                    st.success("🗑️ Registro eliminado.")
+                    import time; time.sleep(1); st.rerun()
                 
                 st.markdown("---")
                 st.markdown("### 🚨 Zona de Peligro")
-                st.error("⚠️ Esta acción borrará **absolutamente todos** los datos de la tabla `MovimientosDividendos` y no se puede deshacer.")
-                
                 if st.button("🔥 BORRAR TODOS LOS DATOS", type="primary"):
-                    # Confirmación rápida
                     supabase.table("MovimientosDividendos").delete().neq("id", -1).execute()
-                    st.success("💥 Base de datos limpiada por completo. Refrescando...")
-                    import time; time.sleep(1)
-                    st.rerun()
+                    st.success("💥 Base de datos limpiada.")
+                    import time; time.sleep(1); st.rerun()
             else:
                 st.info("ℹ️ La base de datos ya está vacía.")
 
     except Exception as e:
-        st.error(f"❌ Error de conexión con la base de datos: {e}")
+        st.error(f"❌ Error: {e}")
+
+
+
 
 
 
