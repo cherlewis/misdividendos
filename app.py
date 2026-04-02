@@ -197,6 +197,7 @@ if opcion == "📊 Cuadro de Mando (Dashboard)":
 # ==========================================
 # 🚀 APLICACIÓN 1: DIVIDENDOS
 # ==========================================
+# ==========================================
 # 🚀 APLICACIÓN 1: DIVIDENDOS
 # ==========================================
 elif opcion == "📊 Dividendos a Excel":
@@ -447,6 +448,7 @@ elif opcion == "📊 Dividendos a Excel":
                                 
                         except Exception as e:
                             st.error(f"❌ Error al subir a la Base de Datos: {e}")
+
 
 
 
