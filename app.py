@@ -282,9 +282,22 @@ elif opcion == "📊 Dividendos a Excel":
                     archivos_fallidos.append(archivo.name)
             
                 # 🧹 VACIADO AGRESIVO DE MEMORIA RAM POR CADA PDF
+                #import gc
+                #gc.collect()
+                #barra_progreso.progress((i + 1) / total_archivos)
+
+                # 🧹 VACIADO AGRESIVO DE MEMORIA RAM POR CADA PDF
                 import gc
                 gc.collect()
+                
+                # 🎯 TRUCO DE RESPIRACIÓN: Dejamos pausar 0.05 segs para que el navegador no corte la conexión
+                import time
+                time.sleep(0.05) 
+                
                 barra_progreso.progress((i + 1) / total_archivos)
+
+
+            
 
             texto_estado.empty()
 
