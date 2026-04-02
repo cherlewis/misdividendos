@@ -7,3 +7,5 @@ maxMessageSize = 1024
 
 # Desactiva una protección extra que a veces bloquea subidas masivas (AxiosError)
 enableXsrfProtection = false
+
+websocketPingTimeout = 600
