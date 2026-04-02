@@ -237,6 +237,10 @@ elif opcion == "📊 Dividendos a Excel":
                         if empresa != "Empresa":
                             empresa = empresa.split("   ")[0].split("(")[0].strip()
 
+                        # 1.5 CONCEPTO (🎯 NUEVO)
+                        match_concepto = re.search(r"(Primas?\s+de\s+asistencia|Primas?\s+de\s+emisi[oó]n|Stock\s+Dividend)", texto, re.IGNORECASE)
+                        concepto = match_concepto.group(1).strip().upper() if match_concepto else "DIVIDENDO"
+
                         # 2. FECHAS
                         fechas_todas = re.findall(r"(\d{2}/\d{2}/\d{4})", texto)
                         match_fecha_clara = re.search(r"(?<!valor\s)Fecha\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})", texto, re.IGNORECASE)
@@ -263,6 +267,7 @@ elif opcion == "📊 Dividendos a Excel":
 
                         datos_dividendos.append({
                             "Fecha": fecha_abono,
+                            "Concepto": concepto, # 🎯 AÑADIDO AL EXCEL
                             "Empresa_PDF": empresa,
                             "Títulos": titulos,
                             "Importe Bruto": importe_bruto,
@@ -335,7 +340,8 @@ elif opcion == "📊 Dividendos a Excel":
                         df["Sector"], df["Subsector"], df["Pais"] = sectores, subsectores, paises
                         df["ISIN"], df["NombreING"], df["NombreHacienda"] = isins, nombres_ing, nombres_hac
                         
-                        cols_finales = ["Fecha", "NombreING", "ISIN", "Pais", "Sector", "Subsector", "Títulos", "Importe Bruto", "Ret. Origen", "Ret. Destino", "Importe Neto", "Divisa / Cambio", "NombreHacienda", "Archivo"]
+                        # 🎯 AÑADIMOS EL CONCEPTO A LAS COLUMNAS VISIBLES Y DE DESCARGA
+                        cols_finales = ["Fecha", "Concepto", "NombreING", "ISIN", "Pais", "Sector", "Subsector", "Títulos", "Importe Bruto", "Ret. Origen", "Ret. Destino", "Importe Neto", "Divisa / Cambio", "NombreHacienda", "Archivo"]
                         df = df[cols_finales]
                     except Exception as e:
                         st.error(f"⚠️ Error al cruzar datos: {e}")
@@ -403,20 +409,22 @@ elif opcion == "📊 Dividendos a Excel":
                                 
                                 registros_a_subir.append({
                                     "fecha": fecha_sql,
+                                    "concepto": str(row["Concepto"]), # 🎯 AÑADIDO A LA BASE DE DATOS
                                     "empresa": str(row["NombreING"]),
-                                    "isin": str(row["ISIN"]).strip(), # 🎯 AÑADIMOS EL DNI
+                                    "isin": str(row["ISIN"]).strip(),
                                     "bruto_ing": bruto_ing,
                                     "ret_origen_ing": ret_origen,
                                     "ret_destino_ing": ret_destino,
                                     "ejercicio_fiscal": ejercicio_fiscal
                                 })
-
                             
                             if registros_a_subir:
                                 supabase.table("MovimientosDividendos").insert(registros_a_subir).execute()
                                 st.success(f"✅ ¡{len(registros_a_subir)} movimientos añadidos correctamente a MovimientosDividendos!")
                         except Exception as e:
                             st.error(f"❌ Error al subir a la Base de Datos: {e}")
+
+
 
 
 
