@@ -192,6 +192,8 @@ if opcion == "📊 Cuadro de Mando (Dashboard)":
 
 
 
+
+
 # ==========================================
 # 🚀 APLICACIÓN 1: DIVIDENDOS
 # ==========================================
@@ -237,7 +239,7 @@ elif opcion == "📊 Dividendos a Excel":
                         if empresa != "Empresa":
                             empresa = empresa.split("   ")[0].split("(")[0].strip()
 
-                        # 1.5 CONCEPTO (🎯 NUEVO)
+                        # 1.5 CONCEPTO
                         match_concepto = re.search(r"(Primas?\s+de\s+asistencia|Primas?\s+de\s+emisi[oó]n|Stock\s+Dividend)", texto, re.IGNORECASE)
                         concepto = match_concepto.group(1).strip().upper() if match_concepto else "DIVIDENDO"
 
@@ -267,7 +269,7 @@ elif opcion == "📊 Dividendos a Excel":
 
                         datos_dividendos.append({
                             "Fecha": fecha_abono,
-                            "Concepto": concepto, # 🎯 AÑADIDO AL EXCEL
+                            "Concepto": concepto,
                             "Empresa_PDF": empresa,
                             "Títulos": titulos,
                             "Importe Bruto": importe_bruto,
@@ -278,26 +280,15 @@ elif opcion == "📊 Dividendos a Excel":
                             "Archivo": archivo.name
                         })
                 except Exception as e:
-                    # 🚨 SI FALLA, LO APUNTA EN LA LISTA NEGRA Y SIGUE CON EL SIGUIENTE
                     archivos_fallidos.append(archivo.name)
             
-                # 🧹 VACIADO AGRESIVO DE MEMORIA RAM POR CADA PDF
-                #import gc
-                #gc.collect()
-                #barra_progreso.progress((i + 1) / total_archivos)
-
-                # 🧹 VACIADO AGRESIVO DE MEMORIA RAM POR CADA PDF
                 import gc
                 gc.collect()
-                
-                # 🎯 TRUCO DE RESPIRACIÓN: Dejamos pausar 0.05 segs para que el navegador no corte la conexión
+                # Truco de respiración por si acaso
                 import time
                 time.sleep(0.05) 
                 
                 barra_progreso.progress((i + 1) / total_archivos)
-
-
-            
 
             texto_estado.empty()
 
@@ -353,28 +344,20 @@ elif opcion == "📊 Dividendos a Excel":
                         df["Sector"], df["Subsector"], df["Pais"] = sectores, subsectores, paises
                         df["ISIN"], df["NombreING"], df["NombreHacienda"] = isins, nombres_ing, nombres_hac
                         
-                        # 🎯 AÑADIMOS EL CONCEPTO A LAS COLUMNAS VISIBLES Y DE DESCARGA
                         cols_finales = ["Fecha", "Concepto", "NombreING", "ISIN", "Pais", "Sector", "Subsector", "Títulos", "Importe Bruto", "Ret. Origen", "Ret. Destino", "Importe Neto", "Divisa / Cambio", "NombreHacienda", "Archivo"]
                         df = df[cols_finales]
                     except Exception as e:
                         st.error(f"⚠️ Error al cruzar datos: {e}")
 
-                # 📦 GUARDAR EN LA MEMORIA CACHÉ
                 st.session_state["divs_df"] = df
                 st.session_state["divs_archivos"] = nombres_archivos
                 st.session_state["divs_fallidos"] = archivos_fallidos
                 st.success(f"¡Se procesaron {len(df)} archivo(s) con éxito!")
 
-        # ---------------------------------------------------------------------
-        # 🔔 AVISO DE ARCHIVOS FALLIDOS (Se lee de la caché)
-        # ---------------------------------------------------------------------
         if st.session_state.get("divs_fallidos"):
             lista_fallos = "\n".join([f"- {f}" for f in st.session_state["divs_fallidos"]])
-            st.warning(f"⚠️ **Atención:** Hubo {len(st.session_state['divs_fallidos'])} archivo(s) que no se pudieron leer. Puede que estén corruptos o no sean de dividendos:\n\n{lista_fallos}")
+            st.warning(f"⚠️ **Atención:** Hubo {len(st.session_state['divs_fallidos'])} archivo(s) que no se pudieron leer:\n\n{lista_fallos}")
 
-        # ---------------------------------------------------------------------
-        # RENDERIZAR TABLA Y DESCARGA
-        # ---------------------------------------------------------------------
         if "divs_df" in st.session_state:
             df_mostrar = st.session_state["divs_df"].copy()
             
@@ -391,7 +374,6 @@ elif opcion == "📊 Dividendos a Excel":
             
             st.dataframe(df_mostrar)
             
-            # --- 🔘 BOTONES LADO A LADO ---
             col1, col2 = st.columns(2)
             
             with col1:
@@ -400,13 +382,27 @@ elif opcion == "📊 Dividendos a Excel":
                 
             with col2:
                 if st.button("☁️ Añadir datos a base de datos", type="primary", use_container_width=True):
-                    with st.spinner("Subiendo datos a MovimientosDividendos..."):
+                    with st.spinner("Comprobando duplicados y subiendo datos..."):
                         try:
                             from supabase import create_client, Client
                             supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
                             
+                            # 1️⃣ Traer existentes de la BD para crear la HUELLA DIGITAL
+                            # Solo nos traemos fecha, empresa y bruto para comparar y ahorrar datos
+                            res_db = supabase.table("MovimientosDividendos").select("fecha, empresa, bruto_ing").execute()
+                            
+                            db_existentes = set()
+                            if res_db.data:
+                                for row_db in res_db.data:
+                                    f_db = str(row_db.get("fecha", ""))
+                                    e_db = str(row_db.get("empresa", "")).strip().upper()
+                                    b_db = round(float(row_db.get("bruto_ing") or 0), 2)
+                                    firma = f"{f_db}_{e_db}_{b_db}"
+                                    db_existentes.add(firma)
+                            
                             registros_a_subir = []
-                            # Iteramos sobre el DF original de la caché (sin la fila de TOTALES)
+                            duplicados_omitidos = 0
+                            
                             for _, row in st.session_state["divs_df"].iterrows(): 
                                 try:
                                     dia, mes, anio = str(row["Fecha"]).split("/")
@@ -419,24 +415,39 @@ elif opcion == "📊 Dividendos a Excel":
                                 bruto_ing = euro_a_numero(str(row["Importe Bruto"]))
                                 ret_origen = euro_a_numero(str(row["Ret. Origen"]))
                                 ret_destino = euro_a_numero(str(row["Ret. Destino"]))
+                                empresa_limpia = str(row["NombreING"]).strip().upper()
                                 
-                                registros_a_subir.append({
-                                    "fecha": fecha_sql,
-                                    "concepto": str(row["Concepto"]), # 🎯 AÑADIDO A LA BASE DE DATOS
-                                    "empresa": str(row["NombreING"]),
-                                    "isin": str(row["ISIN"]).strip(),
-                                    "bruto_ing": bruto_ing,
-                                    "ret_origen_ing": ret_origen,
-                                    "ret_destino_ing": ret_destino,
-                                    "ejercicio_fiscal": ejercicio_fiscal
-                                })
+                                # 🛡️ Comprobación de duplicados (Firma actual)
+                                firma_actual = f"{fecha_sql}_{empresa_limpia}_{round(bruto_ing, 2)}"
+                                
+                                if firma_actual in db_existentes:
+                                    duplicados_omitidos += 1
+                                else:
+                                    registros_a_subir.append({
+                                        "fecha": fecha_sql,
+                                        "concepto": str(row["Concepto"]),
+                                        "empresa": empresa_limpia,
+                                        "isin": str(row["ISIN"]).strip(),
+                                        "bruto_ing": bruto_ing,
+                                        "ret_origen_ing": ret_origen,
+                                        "ret_destino_ing": ret_destino,
+                                        "ejercicio_fiscal": ejercicio_fiscal
+                                    })
+                                    # Lo añadimos a la lista local para evitar duplicados en el mismo PDF múltiple
+                                    db_existentes.add(firma_actual) 
                             
                             if registros_a_subir:
                                 supabase.table("MovimientosDividendos").insert(registros_a_subir).execute()
-                                st.success(f"✅ ¡{len(registros_a_subir)} movimientos añadidos correctamente a MovimientosDividendos!")
+                                if duplicados_omitidos > 0:
+                                    st.success(f"✅ ¡{len(registros_a_subir)} movimientos NUEVOS subidos! (Se han omitido {duplicados_omitidos} archivos que ya estaban en la BD)")
+                                else:
+                                    st.success(f"✅ ¡{len(registros_a_subir)} movimientos subidos correctamente!")
+                                st.balloons()
+                            else:
+                                st.info(f"ℹ️ No se ha subido nada. Los {duplicados_omitidos} dividendos de estos PDFs ya estaban guardados en tu base de datos.")
+                                
                         except Exception as e:
                             st.error(f"❌ Error al subir a la Base de Datos: {e}")
-
 
 
 
