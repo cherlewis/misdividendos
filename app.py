@@ -2620,6 +2620,8 @@ elif opcion == "🕵️‍♂️ Auditoría Interna (ING)":
 # ==========================================
 # 🚀 APLICACIÓN: GESTOR MANUAL DE MOVIMIENTOS
 # ==========================================
+# 🚀 APLICACIÓN: GESTOR MANUAL DE MOVIMIENTOS
+# ==========================================
 elif opcion == "✍️ Gestor Manual de Movimientos":
     st.title("✍️ Gestor Manual de Movimientos")
     st.write("Añade, edita o elimina dividendos manualmente en tu base de datos `MovimientosDividendos`.")
@@ -2643,8 +2645,8 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
         with tab1:
             st.subheader("Datos actuales en la Base de Datos")
             if not df_movs.empty:
-                # Ordenamos las columnas para que se vean bonitas
-                cols_orden = ["id", "fecha", "empresa", "isin", "bruto_ing", "ret_origen_ing", "ret_destino_ing", "ejercicio_fiscal"]
+                # 🎯 Añadido 'concepto' al orden visual de la tabla
+                cols_orden = ["id", "fecha", "empresa", "concepto", "isin", "bruto_ing", "ret_origen_ing", "ret_destino_ing", "ejercicio_fiscal"]
                 # Filtramos solo las columnas que existen en el dataframe
                 cols_mostrar = [c for c in cols_orden if c in df_movs.columns]
                 st.dataframe(df_movs[cols_mostrar], use_container_width=True)
@@ -2661,9 +2663,10 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                 f_fecha = col1.date_input("📅 Fecha de abono")
                 f_empresa = col2.text_input("🏢 Empresa")
                 f_isin = col1.text_input("🆔 ISIN")
-                f_bruto = col2.number_input("💰 Importe Bruto (€)", min_value=0.0, step=0.01, format="%.2f")
-                f_ret_ori = col1.number_input("🌍 Retención Origen (€)", min_value=0.0, step=0.01, format="%.2f")
-                f_ret_des = col2.number_input("🇪🇸 Retención Destino (€)", min_value=0.0, step=0.01, format="%.2f")
+                f_concepto = col2.text_input("📝 Concepto", value="DIVIDENDO") # 🎯 NUEVO CAMPO
+                f_bruto = col1.number_input("💰 Importe Bruto (€)", min_value=0.0, step=0.01, format="%.2f")
+                f_ret_ori = col2.number_input("🌍 Retención Origen (€)", min_value=0.0, step=0.01, format="%.2f")
+                f_ret_des = col1.number_input("🇪🇸 Retención Destino (€)", min_value=0.0, step=0.01, format="%.2f")
                 
                 submitted_add = st.form_submit_button("Guardar Nuevo Movimiento", type="primary")
                 
@@ -2672,6 +2675,7 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                         "fecha": f_fecha.strftime("%Y-%m-%d"),
                         "empresa": f_empresa.strip().upper(),
                         "isin": f_isin.strip().upper(),
+                        "concepto": f_concepto.strip().upper(), # 🎯 GUARDADO EN BD
                         "bruto_ing": float(f_bruto),
                         "ret_origen_ing": float(f_ret_ori),
                         "ret_destino_ing": float(f_ret_des),
@@ -2704,9 +2708,17 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                         e_fecha = col1.date_input("📅 Fecha de abono", value=fecha_defecto)
                         e_empresa = col2.text_input("🏢 Empresa", value=str(fila_sel.get("empresa", "")))
                         e_isin = col1.text_input("🆔 ISIN", value=str(fila_sel.get("isin", "")))
-                        e_bruto = col2.number_input("💰 Importe Bruto (€)", value=float(fila_sel.get("bruto_ing", 0.0)), step=0.01, format="%.2f")
-                        e_ret_ori = col1.number_input("🌍 Retención Origen (€)", value=float(fila_sel.get("ret_origen_ing", 0.0)), step=0.01, format="%.2f")
-                        e_ret_des = col2.number_input("🇪🇸 Retención Destino (€)", value=float(fila_sel.get("ret_destino_ing", 0.0)), step=0.01, format="%.2f")
+                        
+                        # 🎯 Rescatamos el concepto o ponemos "DIVIDENDO" si venía vacío
+                        valor_concepto = str(fila_sel.get("concepto", ""))
+                        if valor_concepto == "None" or not valor_concepto.strip():
+                            valor_concepto = "DIVIDENDO"
+                            
+                        e_concepto = col2.text_input("📝 Concepto", value=valor_concepto) # 🎯 NUEVO CAMPO
+                        
+                        e_bruto = col1.number_input("💰 Importe Bruto (€)", value=float(fila_sel.get("bruto_ing", 0.0)), step=0.01, format="%.2f")
+                        e_ret_ori = col2.number_input("🌍 Retención Origen (€)", value=float(fila_sel.get("ret_origen_ing", 0.0)), step=0.01, format="%.2f")
+                        e_ret_des = col1.number_input("🇪🇸 Retención Destino (€)", value=float(fila_sel.get("ret_destino_ing", 0.0)), step=0.01, format="%.2f")
                         
                         submitted_edit = st.form_submit_button("💾 Guardar Cambios", type="primary")
                         
@@ -2715,6 +2727,7 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                                 "fecha": e_fecha.strftime("%Y-%m-%d"),
                                 "empresa": e_empresa.strip().upper(),
                                 "isin": e_isin.strip().upper(),
+                                "concepto": e_concepto.strip().upper(), # 🎯 ACTUALIZADO EN BD
                                 "bruto_ing": float(e_bruto),
                                 "ret_origen_ing": float(e_ret_ori),
                                 "ret_destino_ing": float(e_ret_des),
@@ -2758,7 +2771,6 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
 
     except Exception as e:
         st.error(f"❌ Error de conexión con la base de datos: {e}")
-
 
 
 
