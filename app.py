@@ -419,6 +419,14 @@ elif opcion == "📊 Dividendos a Excel":
                                 ret_destino = euro_a_numero(str(row["Ret. Destino"]))
                                 empresa_limpia = str(row["NombreING"]).strip().upper()
                                 
+                                # 🎯 1. Convertimos los títulos a número
+                                titulos_num = euro_a_numero(str(row["Títulos"]))
+                                
+                                # 🎯 2. Calculamos el importe por título (evitando dividir por 0 por si hay algún error)
+                                importe_por_titulo = 0.0
+                                if titulos_num > 0:
+                                    importe_por_titulo = round(bruto_ing / titulos_num, 6)
+                                
                                 firma_actual = f"{fecha_sql}_{empresa_limpia}_{round(bruto_ing, 2)}"
                                 
                                 if firma_actual in db_existentes:
@@ -432,9 +440,14 @@ elif opcion == "📊 Dividendos a Excel":
                                         "bruto_ing": bruto_ing,
                                         "ret_origen_ing": ret_origen,
                                         "ret_destino_ing": ret_destino,
-                                        "ejercicio_fiscal": ejercicio_fiscal
+                                        "ejercicio_fiscal": ejercicio_fiscal,
+                                        "titulos": titulos_num,              # 🎯 AÑADIDO A BASE DE DATOS
+                                        "importe_por_titulo": importe_por_titulo # 🎯 AÑADIDO A BASE DE DATOS
                                     })
                                     db_existentes.add(firma_actual) 
+
+
+                            
                             
                             if registros_a_subir:
                                 supabase.table("MovimientosDividendos").insert(registros_a_subir).execute()
