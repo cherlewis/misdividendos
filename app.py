@@ -203,6 +203,15 @@ elif opcion == "📊 Dividendos a Excel":
     st.title("📄 Extractor de Dividendos a Excel")
     st.write("Sube tus PDFs de dividendos de ING. Optimizado para detectar importes 'totales' y fechas de abono.")
     
+    # 🏎️ CALENTANDO EL MOTOR EN LA SOMBRA (Cold Start Fix)
+    # Importamos todo lo pesado AQUÍ, antes de que el usuario suba nada.
+    import pdfplumber
+    import pandas as pd
+    import re
+    import gc
+    import time
+    from supabase import create_client, Client
+    
     archivos_pdf = st.file_uploader("Sube tus PDFs de Dividendos aquí", type=["pdf"], accept_multiple_files=True, key="divs")
 
     if archivos_pdf:
@@ -216,8 +225,6 @@ elif opcion == "📊 Dividendos a Excel":
             total_archivos = len(archivos_pdf)
             barra_progreso = st.progress(0)
             texto_estado = st.empty()
-
-            import pdfplumber # Lo importamos fuera del bucle para ahorrar recursos
             
             for i, archivo in enumerate(archivos_pdf):
                 texto_estado.text(f"⏳ Procesando ({i+1}/{total_archivos}): {archivo.name}...")
@@ -282,11 +289,8 @@ elif opcion == "📊 Dividendos a Excel":
                 except Exception as e:
                     archivos_fallidos.append(archivo.name)
             
-                import gc
-                gc.collect()
-                # Truco de respiración por si acaso
-                import time
-                time.sleep(0.05) 
+                gc.collect() # Limpiamos memoria
+                time.sleep(0.05) # Pausa para mantener el navegador vivo
                 
                 barra_progreso.progress((i + 1) / total_archivos)
 
@@ -298,7 +302,6 @@ elif opcion == "📊 Dividendos a Excel":
                 # --- CRUCE CON BASE DE DATOS ---
                 with st.spinner("🧠 Cruzando con tu Base de Datos..."):
                     try:
-                        from supabase import create_client, Client
                         url = st.secrets["SUPABASE_URL"]
                         key = st.secrets["SUPABASE_KEY"]
                         supabase = create_client(url, key)
@@ -384,11 +387,9 @@ elif opcion == "📊 Dividendos a Excel":
                 if st.button("☁️ Añadir datos a base de datos", type="primary", use_container_width=True):
                     with st.spinner("Comprobando duplicados y subiendo datos..."):
                         try:
-                            from supabase import create_client, Client
+                            # Ya hemos importado 'create_client' al inicio, lo usamos directo
                             supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
                             
-                            # 1️⃣ Traer existentes de la BD para crear la HUELLA DIGITAL
-                            # Solo nos traemos fecha, empresa y bruto para comparar y ahorrar datos
                             res_db = supabase.table("MovimientosDividendos").select("fecha, empresa, bruto_ing").execute()
                             
                             db_existentes = set()
@@ -417,7 +418,6 @@ elif opcion == "📊 Dividendos a Excel":
                                 ret_destino = euro_a_numero(str(row["Ret. Destino"]))
                                 empresa_limpia = str(row["NombreING"]).strip().upper()
                                 
-                                # 🛡️ Comprobación de duplicados (Firma actual)
                                 firma_actual = f"{fecha_sql}_{empresa_limpia}_{round(bruto_ing, 2)}"
                                 
                                 if firma_actual in db_existentes:
@@ -433,7 +433,6 @@ elif opcion == "📊 Dividendos a Excel":
                                         "ret_destino_ing": ret_destino,
                                         "ejercicio_fiscal": ejercicio_fiscal
                                     })
-                                    # Lo añadimos a la lista local para evitar duplicados en el mismo PDF múltiple
                                     db_existentes.add(firma_actual) 
                             
                             if registros_a_subir:
@@ -448,6 +447,8 @@ elif opcion == "📊 Dividendos a Excel":
                                 
                         except Exception as e:
                             st.error(f"❌ Error al subir a la Base de Datos: {e}")
+
+
 
 
 
