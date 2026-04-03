@@ -1479,9 +1479,9 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.info(f"**🛒 COMPRA (Valor Adquisición)**\n\nFecha: {compra['Fecha']}\n\nTítulos: **{compra['Títulos']}**\n\n**Total: {formatear_moneda(val_adquisicion)}**")
+                    st.info(f"**🛒 COMPRA (Valor Adquisición - Lo que costó - Casilla 333)**\n\nFecha: {compra['Fecha']}\n\nTítulos: **{compra['Títulos']}**\n\n**Total: {formatear_moneda(val_adquisicion)}**")
                 with col2:
-                    st.success(f"**💰 VENTA (Valor Transmisión)**\n\nFecha: {venta['Fecha']}\n\nTítulos: **{venta['Títulos']}**\n\n**Total: {formatear_moneda(val_transmision)}**")
+                    st.success(f"**💰 VENTA (Valor Transmisión - Lo que has recibido - Casillas 311/331)**\n\nFecha: {venta['Fecha']}\n\nTítulos: **{venta['Títulos']}**\n\n**Total: {formatear_moneda(val_transmision)}**")
                 with col3:
                     if plusvalia > 0:
                         st.success(f"**📈 GANANCIA (Plusvalía)**\n\nA declarar en Hacienda:\n\n## + {formatear_moneda(plusvalia)}")
