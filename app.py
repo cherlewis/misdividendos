@@ -93,6 +93,7 @@ opcion = st.sidebar.radio(
         "🏢 Gestor de Empresas (DB)",
         "⚖️ Auditoría Pro (DB)", # <--- La nueva joya
         "🕵️‍♂️ Auditoría Interna (ING)",  # <--- ¡AQUÍ ESTÁ LA NUEVA!
+        "⚖️ Auditoría Movs vs AEAT", # <--- ¡ESTA ES LA NUEVA!
         "✍️ Gestor Manual de Movimientos"  # <--- Añade esta línea
 
     ]
@@ -2636,6 +2637,263 @@ elif opcion == "🕵️‍♂️ Auditoría Interna (ING)":
 
 
 
+
+
+
+# ==========================================
+# 🚀 APLICACIÓN: AUDITORÍA MOVS vs AEAT
+# ==========================================
+elif opcion == "⚖️ Auditoría Movs vs AEAT":
+    st.title("⚖️ Auditoría Movs vs AEAT")
+    st.write("Cruza la suma de tus **PDFs individuales de dividendos (Movimientos)** directamente contra los **datos de Hacienda (AEAT)**. Ideal para comprobar que tus justificantes cuadran al céntimo con el borrador.")
+
+    from datetime import datetime
+    import pandas as pd
+    anio_fiscal_defecto = datetime.now().year - 1
+
+    ejercicio_auditar = st.number_input(
+        "📅 ¿Qué Año Fiscal quieres auditar en esta vista?", 
+        min_value=2020, 
+        max_value=2050, 
+        value=anio_fiscal_defecto
+    )
+
+    st.markdown("---")
+
+    if st.button("🔍 Iniciar Auditoría (Movs vs AEAT)", type="primary", use_container_width=True):
+        with st.spinner(f"Descargando y emparejando Movimientos vs AEAT de {ejercicio_auditar}..."):
+            try:
+                from supabase import create_client, Client
+                supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+
+                def isin_coincide(i1, i2):
+                    if not i1 or not i2: return False
+                    if i1 == i2: return True
+                    if i1.startswith("ES") and i2.startswith("ES") and len(i1) >= 9 and len(i2) >= 9:
+                        return i1[4:9] == i2[4:9]
+                    return False
+
+                # 1️⃣ DESCARGAMOS LAS DOS TABLAS
+                res_movs = supabase.table("MovimientosDividendos").select("*").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
+                res_aeat = supabase.table("informefiscalaeat").select("*").eq("ejercicio_fiscal", int(ejercicio_auditar)).execute()
+
+                if not res_movs.data and not res_aeat.data:
+                    st.warning(f"🤷‍♂️ No hay datos guardados en ninguna de las dos tablas para el año {ejercicio_auditar}.")
+                else:
+                    mov_list = []
+                    if res_movs.data:
+                        for row in res_movs.data:
+                            isin_limpio = str(row.get("isin", "")).replace('\xa0', '').replace(' ', '').strip().upper()
+                            mov_list.append({
+                                "id": row["id"],
+                                "isin": isin_limpio,
+                                "empresa": str(row.get("empresa", "")).strip(),
+                                "concepto": str(row.get("concepto", "")).strip(),
+                                "pais": str(row.get("pais", "Desconocido")).strip().upper(), # Usa tu nueva columna
+                                "bruto": round(float(row.get("bruto_ing") or 0), 2),
+                                "ret": round(float(row.get("ret_destino_ing") or 0), 2),
+                                "ret_ori": round(float(row.get("ret_origen_ing") or 0), 2), 
+                                "ret_recup": round(float(row.get("Recupera_ret_origen") or 0), 2), 
+                                "comprobado": False  
+                            })
+
+                    aeat_list = []
+                    if res_aeat.data:
+                        for row in res_aeat.data:
+                            isin_limpio = str(row.get("isin", "")).replace('\xa0', '').replace(' ', '').strip().upper()
+                            aeat_list.append({
+                                "id": row["id"],
+                                "isin": isin_limpio,
+                                "empresa": str(row.get("nombre_emisor", "")).strip(),
+                                "clave": str(row.get("clave", "")).strip(),
+                                "bruto": round(float(row.get("importe_integro") or 0), 2),
+                                "ret": round(float(row.get("retenciones") or 0), 2),
+                                "comprobado": False 
+                            })
+
+                    resultados = []
+
+                    # 2️⃣ ALGORITMO DE EMPAREJAMIENTO
+                    for div_mov in mov_list:
+                        if div_mov["comprobado"]: continue
+                        
+                        mejor_pareja = None
+                        for div_aeat in aeat_list:
+                            if not div_aeat["comprobado"]:
+                                if isin_coincide(div_mov["isin"], div_aeat["isin"]) and abs(div_aeat["bruto"] - div_mov["bruto"]) <= 0.02:
+                                    mejor_pareja = div_aeat
+                                    break 
+                        
+                        if mejor_pareja:
+                            div_mov["comprobado"] = True
+                            mejor_pareja["comprobado"] = True
+                            
+                            dif_b = div_mov["bruto"] - mejor_pareja["bruto"]
+                            dif_r = div_mov["ret"] - mejor_pareja["ret"]
+                            estado = "✅ Ok" if abs(dif_r) <= 0.05 and abs(dif_b) <= 0.05 else "⚠️ Descuadre"
+                            
+                            resultados.append({
+                                "Estado": estado,
+                                "Concepto": mejor_pareja["clave"] if mejor_pareja["clave"] else div_mov["concepto"],
+                                "ISIN": div_mov["isin"],
+                                "Empresa": div_mov["empresa"],
+                                "Pais": div_mov["pais"],
+                                "Bruto_Movs": div_mov["bruto"],
+                                "Bruto_AEAT": mejor_pareja["bruto"],
+                                "Dif_Bruto": dif_b,
+                                "Ret_Movs": div_mov["ret"],
+                                "Ret_AEAT": mejor_pareja["ret"],
+                                "Dif_Ret": dif_r,
+                                "Ret_Ori_Movs": div_mov["ret_ori"], 
+                                "Ret_Recup_Movs": div_mov["ret_recup"] 
+                            })
+                        else:
+                            resultados.append({
+                                "Estado": "❌ Falta en AEAT",
+                                "Concepto": div_mov["concepto"],
+                                "ISIN": div_mov["isin"],
+                                "Empresa": div_mov["empresa"],
+                                "Pais": div_mov["pais"],
+                                "Bruto_Movs": div_mov["bruto"],
+                                "Bruto_AEAT": 0.0,
+                                "Dif_Bruto": div_mov["bruto"],
+                                "Ret_Movs": div_mov["ret"],
+                                "Ret_AEAT": 0.0,
+                                "Dif_Ret": div_mov["ret"],
+                                "Ret_Ori_Movs": div_mov["ret_ori"], 
+                                "Ret_Recup_Movs": div_mov["ret_recup"] 
+                            })
+
+                    for div_aeat in aeat_list:
+                        if not div_aeat["comprobado"]:
+                            resultados.append({
+                                "Estado": "❌ Falta en Movs",
+                                "Concepto": div_aeat["clave"],
+                                "ISIN": div_aeat["isin"],
+                                "Empresa": div_aeat["empresa"],
+                                "Pais": "ESPAÑA", 
+                                "Bruto_Movs": 0.0,
+                                "Bruto_AEAT": div_aeat["bruto"],
+                                "Dif_Bruto": -div_aeat["bruto"],
+                                "Ret_Movs": 0.0,
+                                "Ret_AEAT": div_aeat["ret"],
+                                "Dif_Ret": -div_aeat["ret"],
+                                "Ret_Ori_Movs": 0.0, 
+                                "Ret_Recup_Movs": 0.0 
+                            })
+
+                    df_cruce = pd.DataFrame(resultados)
+                    df_cruce = df_cruce.sort_values(by=["Estado", "Empresa"], ascending=[False, True])
+
+                    # 3️⃣ CÁLCULO DE MÉTRICAS
+                    st.subheader("🎯 Resumen del Cruce (Movimientos vs AEAT)")
+                    
+                    tot_bruto_movs = df_cruce["Bruto_Movs"].sum()
+                    tot_bruto_aeat = df_cruce["Bruto_AEAT"].sum()
+                    dif_global_bruto = tot_bruto_movs - tot_bruto_aeat
+
+                    tot_bruto_consolidado = 0.0
+                    tot_bruto_extranjero = 0.0
+                    
+                    # Filtros usando la nueva columna País estandarizada
+                    paises_excluidos = ["ESPAÑA", "ES", "", "REINO UNIDO", "UK", "GB", "UNITED KINGDOM", "GREAT BRITAIN"]
+                    empresas_excluidas = ["UNILEVER", "LYONDELLBASELL", "LYB"]
+                    
+                    for _, row in df_cruce.iterrows():
+                        if "Falta en" in row["Estado"]:
+                            tot_bruto_consolidado += row["Bruto_Movs"] if row["Bruto_Movs"] != 0 else row["Bruto_AEAT"]
+                        else:
+                            tot_bruto_consolidado += row["Bruto_Movs"]
+                            
+                        pais_upper = str(row.get("Pais", "")).strip().upper()
+                        empresa_upper = str(row.get("Empresa", "")).strip().upper()
+                        
+                        es_excluida = False
+                        if pais_upper in paises_excluidos:
+                            es_excluida = True
+                        for emp in empresas_excluidas:
+                            if emp in empresa_upper:
+                                es_excluida = True
+                                break
+                                
+                        if not es_excluida:
+                            tot_bruto_extranjero += row["Bruto_Movs"]
+
+                    tot_bruto_añadir_aeat = df_cruce[df_cruce["Estado"] == "❌ Falta en AEAT"]["Bruto_Movs"].sum()
+                    tot_ret_recuperable = df_cruce["Ret_Recup_Movs"].sum()
+
+                    # 4️⃣ RENDERIZADO VISUAL DE CAJAS
+                    col1, col2, col3, col4 = st.columns(4)
+                    col1.metric("Bruto Total (Movs)", f"{tot_bruto_movs:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
+                    col2.metric("Bruto Total (AEAT)", f"{tot_bruto_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
+                    
+                    color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
+                    col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
+                    
+                    texto_extranjero = f"{tot_bruto_extranjero:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                    col4.metric("Bruto Extranjero (Resto)", texto_extranjero, help="Excluye: España, Reino Unido, Unilever y LyondellBasell.")
+                    
+                    st.markdown("<br>", unsafe_allow_html=True) 
+                    
+                    col5, col6, col7 = st.columns(3)
+                    texto_consolidado = f"{tot_bruto_consolidado:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                    col5.metric("Bruto Consolidado", texto_consolidado, help="Total real sumando lo que tienes en PDFs y lo que tiene AEAT.")
+                    
+                    texto_añadir = f"{tot_bruto_añadir_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                    col6.metric("Bruto a añadir a declaración", texto_añadir, help="Dinero que tienes justificado en PDF pero que Hacienda no sabe.")
+                    
+                    texto_recup = f"{tot_ret_recuperable:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                    col7.metric("Ret. Origen Recuperable", texto_recup, help="Calculado automáticamente por tu Base de Datos.")
+
+                    st.markdown("### 🔍 Detalle Dividendo a Dividendo")
+                    
+                    # 5️⃣ PREPARAR TABLA VISUAL CON FILA DE TOTALES
+                    cols_a_mostrar = [col for col in df_cruce.columns if col not in ["Ret_Ori_Movs"]]
+                    df_visual = df_cruce[cols_a_mostrar].copy()
+                    
+                    fila_totales = {col: "" for col in df_visual.columns}
+                    fila_totales["Estado"] = "TOTALES"
+                    
+                    cols_sumar = ["Bruto_Movs", "Bruto_AEAT", "Dif_Bruto", "Ret_Movs", "Ret_AEAT", "Dif_Ret", "Ret_Recup_Movs"]
+                    for col in cols_sumar:
+                        if col in df_visual.columns:
+                            fila_totales[col] = df_visual[col].sum()
+                            
+                    df_visual = pd.concat([df_visual, pd.DataFrame([fila_totales])], ignore_index=True)
+
+                    df_mostrar = df_visual.style.format({
+                        "Bruto_Movs": "{:.2f} €", "Bruto_AEAT": "{:.2f} €", "Dif_Bruto": "{:.2f} €",
+                        "Ret_Movs": "{:.2f} €", "Ret_AEAT": "{:.2f} €", "Dif_Ret": "{:.2f} €",
+                        "Ret_Recup_Movs": "{:.2f} €"
+                    }).map(
+                        lambda x: f"color: {'#ff4b4b' if pd.notna(x) and abs(float(x)) > 0.10 else '#21c354'}", 
+                        subset=["Dif_Bruto", "Dif_Ret"]
+                    )
+                    
+                    st.dataframe(df_mostrar, use_container_width=True, height=600)
+
+                    csv_cruce = df_visual.to_csv(index=False, sep=";").encode('utf-8-sig')
+                    st.download_button(
+                        label="⬇️ Descargar Auditoría (CSV)", 
+                        data=csv_cruce, 
+                        file_name=f"Auditoria_Movs_vs_AEAT_{ejercicio_auditar}.csv", 
+                        mime='text/csv'
+                    )
+
+            except Exception as e:
+                st.error(f"❌ Error interno al realizar la auditoría: {e}")
+
+
+
+
+
+
+
+
+
+
+
+
 # ==========================================
 # 🚀 APLICACIÓN: GESTOR MANUAL DE MOVIMIENTOS
 # ==========================================
@@ -2801,6 +3059,10 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
+
+
+
+
 
 
 
