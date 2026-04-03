@@ -2643,6 +2643,8 @@ elif opcion == "🕵️‍♂️ Auditoría Interna (ING)":
 # ==========================================
 # 🚀 APLICACIÓN: AUDITORÍA MOVS vs AEAT
 # ==========================================
+# 🚀 APLICACIÓN: AUDITORÍA MOVS vs AEAT
+# ==========================================
 elif opcion == "⚖️ Auditoría Movs vs AEAT":
     st.title("⚖️ Auditoría Movs vs AEAT")
     st.write("Cruza la suma de tus **PDFs individuales de dividendos (Movimientos)** directamente contra los **datos de Hacienda (AEAT)**. Ideal para comprobar que tus justificantes cuadran al céntimo con el borrador.")
@@ -2689,7 +2691,7 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                                 "isin": isin_limpio,
                                 "empresa": str(row.get("empresa", "")).strip(),
                                 "concepto": str(row.get("concepto", "")).strip(),
-                                "pais": str(row.get("pais", "Desconocido")).strip().upper(), # Usa tu nueva columna
+                                "pais": str(row.get("pais", "Desconocido")).strip().upper(), 
                                 "bruto": round(float(row.get("bruto_ing") or 0), 2),
                                 "ret": round(float(row.get("ret_destino_ing") or 0), 2),
                                 "ret_ori": round(float(row.get("ret_origen_ing") or 0), 2), 
@@ -2793,11 +2795,10 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                     dif_global_bruto = tot_bruto_movs - tot_bruto_aeat
 
                     tot_bruto_consolidado = 0.0
-                    tot_bruto_extranjero = 0.0
+                    tot_neto_extranjero = 0.0 # 🎯 NUEVA VARIABLE
                     
-                    # Filtros usando la nueva columna País estandarizada
-                    paises_excluidos = ["ESPAÑA", "ES", "", "REINO UNIDO", "UK", "GB", "UNITED KINGDOM", "GREAT BRITAIN"]
-                    empresas_excluidas = ["UNILEVER", "LYONDELLBASELL", "LYB"]
+                    # Filtros de países excluidos para el Neto Extranjero
+                    paises_excluidos = ["ESPAÑA", "ES", ""]
                     
                     for _, row in df_cruce.iterrows():
                         if "Falta en" in row["Estado"]:
@@ -2806,18 +2807,14 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                             tot_bruto_consolidado += row["Bruto_Movs"]
                             
                         pais_upper = str(row.get("Pais", "")).strip().upper()
-                        empresa_upper = str(row.get("Empresa", "")).strip().upper()
                         
-                        es_excluida = False
-                        if pais_upper in paises_excluidos:
-                            es_excluida = True
-                        for emp in empresas_excluidas:
-                            if emp in empresa_upper:
-                                es_excluida = True
-                                break
-                                
-                        if not es_excluida:
-                            tot_bruto_extranjero += row["Bruto_Movs"]
+                        # 🎯 CÁLCULO NETO EXTRANJERO
+                        if pais_upper not in paises_excluidos:
+                            bruto = row.get("Bruto_Movs", 0.0)
+                            ret_ori = row.get("Ret_Ori_Movs", 0.0)
+                            ret_des = row.get("Ret_Movs", 0.0)
+                            neto = bruto - ret_ori - ret_des
+                            tot_neto_extranjero += neto
 
                     tot_bruto_añadir_aeat = df_cruce[df_cruce["Estado"] == "❌ Falta en AEAT"]["Bruto_Movs"].sum()
                     tot_ret_recuperable = df_cruce["Ret_Recup_Movs"].sum()
@@ -2830,8 +2827,9 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                     color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
                     col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
                     
-                    texto_extranjero = f"{tot_bruto_extranjero:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
-                    col4.metric("Bruto Extranjero (Resto)", texto_extranjero, help="Excluye: España, Reino Unido, Unilever y LyondellBasell.")
+                    # 🎯 NUEVA CAJA DE NETO EXTRANJERO
+                    texto_neto_extranjero = f"{tot_neto_extranjero:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                    col4.metric("Neto Extranjero", texto_neto_extranjero, help="Suma del importe neto (Bruto - Ret. Origen - Ret. Destino) de todos los países excepto España.")
                     
                     st.markdown("<br>", unsafe_allow_html=True) 
                     
@@ -2882,6 +2880,9 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
 
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
+
+
+
 
 
 
