@@ -418,12 +418,16 @@ elif opcion == "📊 Dividendos a Excel":
                                 bruto_ing = euro_a_numero(str(row["Importe Bruto"]))
                                 ret_origen = euro_a_numero(str(row["Ret. Origen"]))
                                 ret_destino = euro_a_numero(str(row["Ret. Destino"]))
+                                
+                                # 🎯 AQUÍ EXTRAEMOS EL NETO DEL DATAFRAME
+                                neto_ing = euro_a_numero(str(row["Importe Neto"]))
+                                
                                 empresa_limpia = str(row["NombreING"]).strip().upper()
                                 
-                                # 🎯 1. Convertimos los títulos a número
+                                # 1. Convertimos los títulos a número
                                 titulos_num = euro_a_numero(str(row["Títulos"]))
                                 
-                                # 🎯 2. Calculamos el importe por título (evitando dividir por 0 por si hay algún error)
+                                # 2. Calculamos el importe por título (evitando dividir por 0 por si hay algún error)
                                 importe_por_titulo = 0.0
                                 if titulos_num > 0:
                                     importe_por_titulo = round(bruto_ing / titulos_num, 6)
@@ -441,14 +445,12 @@ elif opcion == "📊 Dividendos a Excel":
                                         "bruto_ing": bruto_ing,
                                         "ret_origen_ing": ret_origen,
                                         "ret_destino_ing": ret_destino,
+                                        "neto_ing": neto_ing,               # 🎯 AQUÍ SE GUARDA EN LA BASE DE DATOS
                                         "ejercicio_fiscal": ejercicio_fiscal,
-                                        "titulos": int(titulos_num),              # 🎯 AÑADIDO A BASE DE DATOS
-                                        "importe_por_titulo": importe_por_titulo # 🎯 AÑADIDO A BASE DE DATOS
+                                        "titulos": int(titulos_num),              
+                                        "importe_por_titulo": importe_por_titulo 
                                     })
                                     db_existentes.add(firma_actual) 
-
-
-                            
                             
                             if registros_a_subir:
                                 supabase.table("MovimientosDividendos").insert(registros_a_subir).execute()
