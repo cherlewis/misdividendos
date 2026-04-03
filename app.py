@@ -2690,7 +2690,7 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                 # CÁLCULO DE TOTALES
                 fila_totales = {col: "" for col in df_display.columns}
                 fila_totales["fecha"] = "TOTALES"
-                for col in ["bruto_ing", "ret_origen_ing", "ret_destino_ing"]:
+                for col in ["bruto_ing", "ret_origen_ing", "ret_destino_ing", "Recupera_ret_origen"]:
                     if col in df_display.columns:
                         suma = pd.to_numeric(df_display[col], errors='coerce').sum()
                         fila_totales[col] = round(suma, 2)
