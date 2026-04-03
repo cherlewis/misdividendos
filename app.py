@@ -2643,11 +2643,12 @@ elif opcion == "🕵️‍♂️ Auditoría Interna (ING)":
 # ==========================================
 # 🚀 APLICACIÓN: AUDITORÍA MOVS vs AEAT
 # ==========================================
+# ==========================================
 # 🚀 APLICACIÓN: AUDITORÍA MOVS vs AEAT
 # ==========================================
 elif opcion == "⚖️ Auditoría Movs vs AEAT":
     st.title("⚖️ Auditoría Movs vs AEAT")
-    st.write("Cruza la suma de tus **PDFs individuales de dividendos (Movimientos)** directamente contra los **datos de Hacienda (AEAT)**. Ideal para comprobar que tus justificantes cuadran al céntimo con el borrador.")
+    st.write("Cruza la suma de tus **PDFs individuales de dividendos (Movimientos)** directamente contra los **datos de Hacienda (AEAT)**.")
 
     from datetime import datetime
     import pandas as pd
@@ -2693,6 +2694,7 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                                 "concepto": str(row.get("concepto", "")).strip(),
                                 "pais": str(row.get("pais", "Desconocido")).strip().upper(), 
                                 "bruto": round(float(row.get("bruto_ing") or 0), 2),
+                                "neto": round(float(row.get("neto_ing") or 0), 2), # 🎯 LEEMOS EL NETO DIRECTO DE LA BD
                                 "ret": round(float(row.get("ret_destino_ing") or 0), 2),
                                 "ret_ori": round(float(row.get("ret_origen_ing") or 0), 2), 
                                 "ret_recup": round(float(row.get("Recupera_ret_origen") or 0), 2), 
@@ -2717,6 +2719,8 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
 
                     # 2️⃣ ALGORITMO DE EMPAREJAMIENTO
                     for div_mov in mov_list:
+                        neto_mov = div_mov["neto"] # 🎯 SIN CÁLCULOS, USAMOS EL VALOR REAL
+                        
                         if div_mov["comprobado"]: continue
                         
                         mejor_pareja = None
@@ -2741,6 +2745,7 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                                 "Empresa": div_mov["empresa"],
                                 "Pais": div_mov["pais"],
                                 "Bruto_Movs": div_mov["bruto"],
+                                "Neto_Movs": neto_mov,
                                 "Bruto_AEAT": mejor_pareja["bruto"],
                                 "Dif_Bruto": dif_b,
                                 "Ret_Movs": div_mov["ret"],
@@ -2757,6 +2762,7 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                                 "Empresa": div_mov["empresa"],
                                 "Pais": div_mov["pais"],
                                 "Bruto_Movs": div_mov["bruto"],
+                                "Neto_Movs": neto_mov,
                                 "Bruto_AEAT": 0.0,
                                 "Dif_Bruto": div_mov["bruto"],
                                 "Ret_Movs": div_mov["ret"],
@@ -2775,6 +2781,7 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                                 "Empresa": div_aeat["empresa"],
                                 "Pais": "ESPAÑA", 
                                 "Bruto_Movs": 0.0,
+                                "Neto_Movs": 0.0,
                                 "Bruto_AEAT": div_aeat["bruto"],
                                 "Dif_Bruto": -div_aeat["bruto"],
                                 "Ret_Movs": 0.0,
@@ -2795,9 +2802,8 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                     dif_global_bruto = tot_bruto_movs - tot_bruto_aeat
 
                     tot_bruto_consolidado = 0.0
-                    tot_neto_extranjero = 0.0 # 🎯 NUEVA VARIABLE
+                    tot_neto_extranjero = 0.0
                     
-                    # Filtros de países excluidos para el Neto Extranjero
                     paises_excluidos = ["ESPAÑA", "ES", ""]
                     
                     for _, row in df_cruce.iterrows():
@@ -2808,13 +2814,8 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                             
                         pais_upper = str(row.get("Pais", "")).strip().upper()
                         
-                        # 🎯 CÁLCULO NETO EXTRANJERO
                         if pais_upper not in paises_excluidos:
-                            bruto = row.get("Bruto_Movs", 0.0)
-                            ret_ori = row.get("Ret_Ori_Movs", 0.0)
-                            ret_des = row.get("Ret_Movs", 0.0)
-                            neto = bruto - ret_ori - ret_des
-                            tot_neto_extranjero += neto
+                            tot_neto_extranjero += row.get("Neto_Movs", 0.0)
 
                     tot_bruto_añadir_aeat = df_cruce[df_cruce["Estado"] == "❌ Falta en AEAT"]["Bruto_Movs"].sum()
                     tot_ret_recuperable = df_cruce["Ret_Recup_Movs"].sum()
@@ -2827,9 +2828,8 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                     color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
                     col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
                     
-                    # 🎯 NUEVA CAJA DE NETO EXTRANJERO
                     texto_neto_extranjero = f"{tot_neto_extranjero:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
-                    col4.metric("Neto Extranjero", texto_neto_extranjero, help="Suma del importe neto (Bruto - Ret. Origen - Ret. Destino) de todos los países excepto España.")
+                    col4.metric("Neto Extranjero", texto_neto_extranjero, help="Suma de la columna Neto de todos los países excepto España.")
                     
                     st.markdown("<br>", unsafe_allow_html=True) 
                     
@@ -2846,13 +2846,13 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                     st.markdown("### 🔍 Detalle Dividendo a Dividendo")
                     
                     # 5️⃣ PREPARAR TABLA VISUAL CON FILA DE TOTALES
-                    cols_a_mostrar = [col for col in df_cruce.columns if col not in ["Ret_Ori_Movs"]]
-                    df_visual = df_cruce[cols_a_mostrar].copy()
+                    cols_visual = ["Estado", "Empresa", "Pais", "Concepto", "ISIN", "Bruto_Movs", "Neto_Movs", "Bruto_AEAT", "Dif_Bruto", "Ret_Movs", "Ret_AEAT", "Dif_Ret", "Ret_Recup_Movs"]
+                    df_visual = df_cruce[cols_visual].copy()
                     
                     fila_totales = {col: "" for col in df_visual.columns}
                     fila_totales["Estado"] = "TOTALES"
                     
-                    cols_sumar = ["Bruto_Movs", "Bruto_AEAT", "Dif_Bruto", "Ret_Movs", "Ret_AEAT", "Dif_Ret", "Ret_Recup_Movs"]
+                    cols_sumar = ["Bruto_Movs", "Neto_Movs", "Bruto_AEAT", "Dif_Bruto", "Ret_Movs", "Ret_AEAT", "Dif_Ret", "Ret_Recup_Movs"]
                     for col in cols_sumar:
                         if col in df_visual.columns:
                             fila_totales[col] = df_visual[col].sum()
@@ -2860,7 +2860,7 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                     df_visual = pd.concat([df_visual, pd.DataFrame([fila_totales])], ignore_index=True)
 
                     df_mostrar = df_visual.style.format({
-                        "Bruto_Movs": "{:.2f} €", "Bruto_AEAT": "{:.2f} €", "Dif_Bruto": "{:.2f} €",
+                        "Bruto_Movs": "{:.2f} €", "Neto_Movs": "{:.2f} €", "Bruto_AEAT": "{:.2f} €", "Dif_Bruto": "{:.2f} €",
                         "Ret_Movs": "{:.2f} €", "Ret_AEAT": "{:.2f} €", "Dif_Ret": "{:.2f} €",
                         "Ret_Recup_Movs": "{:.2f} €"
                     }).map(
@@ -2880,6 +2880,8 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
 
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
+
+
 
 
 
