@@ -2682,7 +2682,7 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
         with tab1:
             st.subheader(f"Movimientos registrados: {año_seleccionado}")
             if not df_movs.empty:
-                cols_orden = ["id", "fecha", "empresa", "concepto", "isin", "bruto_ing", "ret_origen_ing", "ret_destino_ing", "ejercicio_fiscal"]
+                cols_orden = ["id", "fecha", "empresa", "concepto", "isin", "bruto_ing", "ret_origen_ing", "ret_destino_ing", "Recupera_ret_origen", "ejercicio_fiscal"]
                 cols_mostrar = [c for c in cols_orden if c in df_movs.columns]
                 
                 df_display = df_movs[cols_mostrar].copy()
