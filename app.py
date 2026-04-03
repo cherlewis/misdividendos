@@ -441,7 +441,7 @@ elif opcion == "📊 Dividendos a Excel":
                                         "ret_origen_ing": ret_origen,
                                         "ret_destino_ing": ret_destino,
                                         "ejercicio_fiscal": ejercicio_fiscal,
-                                        "titulos": titulos_num,              # 🎯 AÑADIDO A BASE DE DATOS
+                                        "titulos": int(titulos_num),              # 🎯 AÑADIDO A BASE DE DATOS
                                         "importe_por_titulo": importe_por_titulo # 🎯 AÑADIDO A BASE DE DATOS
                                     })
                                     db_existentes.add(firma_actual) 
