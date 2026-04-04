@@ -2923,6 +2923,7 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
         if res_all.data:
             años_disponibles = sorted(list(set([row['ejercicio_fiscal'] for row in res_all.data if row['ejercicio_fiscal']])), reverse=True)
         else:
+            from datetime import datetime
             años_disponibles = [datetime.now().year]
 
         # 🎯 FILTRO GLOBAL POR AÑO FISCAL
@@ -2947,7 +2948,8 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
         with tab1:
             st.subheader(f"Movimientos registrados: {año_seleccionado}")
             if not df_movs.empty:
-                cols_orden = ["id", "fecha", "empresa", "concepto", "isin", "bruto_ing", "ret_origen_ing", "ret_destino_ing", "Recupera_ret_origen", "ejercicio_fiscal"]
+                # 🎯 Añadidas las columnas 'pais' y 'neto_ing' a la vista visual
+                cols_orden = ["id", "fecha", "empresa", "concepto", "pais", "isin", "bruto_ing", "ret_origen_ing", "ret_destino_ing", "neto_ing", "Recupera_ret_origen", "ejercicio_fiscal"]
                 cols_mostrar = [c for c in cols_orden if c in df_movs.columns]
                 
                 df_display = df_movs[cols_mostrar].copy()
@@ -2955,7 +2957,7 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                 # CÁLCULO DE TOTALES
                 fila_totales = {col: "" for col in df_display.columns}
                 fila_totales["fecha"] = "TOTALES"
-                for col in ["bruto_ing", "ret_origen_ing", "ret_destino_ing", "Recupera_ret_origen"]:
+                for col in ["bruto_ing", "ret_origen_ing", "ret_destino_ing", "neto_ing", "Recupera_ret_origen"]:
                     if col in df_display.columns:
                         suma = pd.to_numeric(df_display[col], errors='coerce').sum()
                         fila_totales[col] = round(suma, 2)
@@ -2979,6 +2981,7 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                 f_bruto = col1.number_input("💰 Importe Bruto (€)", step=0.01, format="%.2f")
                 f_ret_ori = col2.number_input("🌍 Retención Origen (€)", min_value=0.0, step=0.01, format="%.2f")
                 f_ret_des = col1.number_input("🇪🇸 Retención Destino (€)", min_value=0.0, step=0.01, format="%.2f")
+                f_neto = col2.number_input("💶 Importe Neto (€)", step=0.01, format="%.2f") # 🎯 NUEVO CAMPO
                 
                 submitted_add = st.form_submit_button("Guardar Nuevo Movimiento", type="primary")
                 
@@ -2991,6 +2994,7 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                         "bruto_ing": float(f_bruto),
                         "ret_origen_ing": float(f_ret_ori),
                         "ret_destino_ing": float(f_ret_des),
+                        "neto_ing": float(f_neto), # 🎯 GUARDADO EN BD
                         "ejercicio_fiscal": f_fecha.year
                     }
                     supabase.table("MovimientosDividendos").insert(nuevo_registro).execute()
@@ -3021,7 +3025,10 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                         e_concepto = c2.text_input("📝 Concepto", value=str(fila.get("concepto", "DIVIDENDO")))
                         e_bruto = c1.number_input("💰 Bruto (€)", value=float(fila.get("bruto_ing", 0.0)), step=0.01, format="%.2f")
                         e_ret_ori = c2.number_input("🌍 Ret. Origen (€)", value=float(fila.get("ret_origen_ing", 0.0)), step=0.01, format="%.2f")
-                        e_ret_des = c1.number_input("🇪🇸 Ret. Destino (€)", value=float(fila_sel.get("ret_destino_ing", 0.0)), step=0.01, format="%.2f")
+                        
+                        # 🎯 CORREGIDO: fila_sel -> fila
+                        e_ret_des = c1.number_input("🇪🇸 Ret. Destino (€)", value=float(fila.get("ret_destino_ing", 0.0)), step=0.01, format="%.2f")
+                        e_neto = c2.number_input("💶 Importe Neto (€)", value=float(fila.get("neto_ing", 0.0)), step=0.01, format="%.2f") # 🎯 NUEVO CAMPO
                         
                         if st.form_submit_button("💾 Guardar Cambios", type="primary"):
                             upd = {
@@ -3032,6 +3039,7 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
                                 "bruto_ing": float(e_bruto),
                                 "ret_origen_ing": float(e_ret_ori),
                                 "ret_destino_ing": float(e_ret_des),
+                                "neto_ing": float(e_neto), # 🎯 ACTUALIZADO EN BD
                                 "ejercicio_fiscal": e_fecha.year
                             }
                             supabase.table("MovimientosDividendos").update(upd).eq("id", id_sel).execute()
