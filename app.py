@@ -206,7 +206,6 @@ elif opcion == "📊 Dividendos a Excel":
     st.write("Sube tus PDFs de dividendos de ING. Optimizado para detectar importes 'totales' y fechas de abono.")
     
     # 🏎️ CALENTANDO EL MOTOR EN LA SOMBRA (Cold Start Fix)
-    # Importamos todo lo pesado AQUÍ, antes de que el usuario suba nada.
     import pdfplumber
     import pandas as pd
     import re
@@ -366,12 +365,60 @@ elif opcion == "📊 Dividendos a Excel":
         if "divs_df" in st.session_state:
             df_mostrar = st.session_state["divs_df"].copy()
             
+            # Ordenamos por fecha temporalmente
             df_mostrar['Fecha_Temporal'] = pd.to_datetime(df_mostrar['Fecha'], format='%d/%m/%Y', errors='coerce')
             df_mostrar = df_mostrar.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
 
+            # 🎯 1. CREAMOS LAS NUEVAS COLUMNAS (AÑO, MES Y CÁLCULOS)
+            df_mostrar['Año'] = df_mostrar['Fecha'].apply(lambda x: str(x).split('/')[2] if type(x)==str and '/' in x else '')
+            df_mostrar['Mes'] = df_mostrar['Fecha'].apply(lambda x: str(x).split('/')[1] if type(x)==str and '/' in x else '')
+            
+            df_mostrar['% retencion en origen'] = ""
+            df_mostrar['% retencion en destino'] = ""
+            df_mostrar['Cuenta de valores'] = ""
+            df_mostrar['Cuenta Abono'] = ""
+            df_mostrar['% € por titulo'] = ""
+            
+            def calc_importe_por_titulo(row):
+                try:
+                    bruto = euro_a_numero(str(row["Importe Bruto"]))
+                    titulos = euro_a_numero(str(row["Títulos"]))
+                    if titulos > 0:
+                        return f"{round(bruto / titulos, 6)}"
+                except:
+                    pass
+                return ""
+                
+            df_mostrar['Importe por título'] = df_mostrar.apply(calc_importe_por_titulo, axis=1)
+
+            # 🎯 2. RENOMBRAMOS PARA ENCAJAR CON TU FORMATO EXACTO
+            df_mostrar = df_mostrar.rename(columns={
+                "Fecha": "Fecha Abono",
+                "Importe Neto": "Importe neto",
+                "Ret. Origen": "Retención en origen",
+                "Ret. Destino": "Retención en destino",
+                "Importe Bruto": "Importe bruto",
+                "NombreING": "Valor",
+                "Títulos": "Número de títulos",
+                "Pais": "PAIS"
+            })
+
+            # 🎯 3. ORDENAMOS LAS COLUMNAS COMO HAS PEDIDO
+            cols_excel = [
+                "Año", "Mes", "Fecha Abono", "Concepto", "Importe neto", 
+                "Retención en origen", "% retencion en origen", "Retención en destino", 
+                "% retencion en destino", "Importe bruto", "Valor", 
+                "Cuenta de valores", "Número de títulos", "Importe por título", 
+                "Cuenta Abono", "% € por titulo", "PAIS"
+            ]
+            
+            df_mostrar = df_mostrar[cols_excel]
+
+            # 🎯 4. FILA DE TOTALES ACTUALIZADA
             fila_totales = {col: "" for col in df_mostrar.columns}
-            fila_totales["Fecha"] = "TOTALES"
-            for col in ["Importe Bruto", "Ret. Origen", "Ret. Destino", "Importe Neto"]:
+            fila_totales["Fecha Abono"] = "TOTALES"
+            
+            for col in ["Importe bruto", "Retención en origen", "Retención en destino", "Importe neto"]:
                 suma = df_mostrar[col].apply(lambda x: euro_a_numero(str(x)) if pd.notnull(x) and x != "" and str(x) != "0,00 EUR" else 0).sum()
                 fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
             
@@ -389,7 +436,7 @@ elif opcion == "📊 Dividendos a Excel":
                 if st.button("☁️ Añadir datos a base de datos", type="primary", use_container_width=True):
                     with st.spinner("Comprobando duplicados y subiendo datos..."):
                         try:
-                            # Ya hemos importado 'create_client' al inicio, lo usamos directo
+                            # ⚠️ Leemos de la caché original para no romper los nombres de base de datos
                             supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
                             
                             res_db = supabase.table("MovimientosDividendos").select("fecha, empresa, bruto_ing").execute()
@@ -418,16 +465,11 @@ elif opcion == "📊 Dividendos a Excel":
                                 bruto_ing = euro_a_numero(str(row["Importe Bruto"]))
                                 ret_origen = euro_a_numero(str(row["Ret. Origen"]))
                                 ret_destino = euro_a_numero(str(row["Ret. Destino"]))
-                                
-                                # 🎯 AQUÍ EXTRAEMOS EL NETO DEL DATAFRAME
                                 neto_ing = euro_a_numero(str(row["Importe Neto"]))
                                 
                                 empresa_limpia = str(row["NombreING"]).strip().upper()
                                 
-                                # 1. Convertimos los títulos a número
                                 titulos_num = euro_a_numero(str(row["Títulos"]))
-                                
-                                # 2. Calculamos el importe por título (evitando dividir por 0 por si hay algún error)
                                 importe_por_titulo = 0.0
                                 if titulos_num > 0:
                                     importe_por_titulo = round(bruto_ing / titulos_num, 6)
@@ -445,13 +487,13 @@ elif opcion == "📊 Dividendos a Excel":
                                         "bruto_ing": bruto_ing,
                                         "ret_origen_ing": ret_origen,
                                         "ret_destino_ing": ret_destino,
-                                        "neto_ing": neto_ing,               # 🎯 AQUÍ SE GUARDA EN LA BASE DE DATOS
+                                        "neto_ing": neto_ing,
                                         "ejercicio_fiscal": ejercicio_fiscal,
                                         "titulos": int(titulos_num),              
                                         "importe_por_titulo": importe_por_titulo 
                                     })
                                     db_existentes.add(firma_actual) 
-                            
+
                             if registros_a_subir:
                                 supabase.table("MovimientosDividendos").insert(registros_a_subir).execute()
                                 if duplicados_omitidos > 0:
@@ -464,8 +506,6 @@ elif opcion == "📊 Dividendos a Excel":
                                 
                         except Exception as e:
                             st.error(f"❌ Error al subir a la Base de Datos: {e}")
-
-
 
 
 
