@@ -2846,7 +2846,7 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                     dif_global_bruto = tot_bruto_movs - tot_bruto_aeat
 
                     tot_bruto_consolidado = 0.0
-                    tot_div_brutos_extranjeros = 0.0 # 🎯 NUEVA VARIABLE
+                    tot_div_brutos_extranjeros = 0.0 
                     
                     paises_excluidos = ["ESPAÑA", "ES", ""]
                     
@@ -2859,7 +2859,6 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                         pais_upper = str(row.get("Pais", "")).strip().upper()
                         ret_origen_aplicada = float(row.get("Ret_Ori_Movs", 0.0))
                         
-                        # 🎯 LÓGICA CONDICIONAL: NO España Y Retención > 0
                         if pais_upper not in paises_excluidos and ret_origen_aplicada > 0:
                             tot_div_brutos_extranjeros += row.get("Bruto_Movs", 0.0)
 
@@ -2874,9 +2873,9 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                     color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
                     col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
                     
-                    # 🎯 CAJA ACTUALIZADA
+                    # 🎯 AÑADIDA MENCIÓN A LA CASILLA 588
                     texto_div_brutos_extranjeros = f"{tot_div_brutos_extranjeros:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
-                    col4.metric("Dividendos brutos extranjeros", texto_div_brutos_extranjeros, help="Suma de los importes brutos de empresas NO españolas, siempre que hayan tenido retención en origen mayor que 0.")
+                    col4.metric("Dividendos brutos extranjeros", texto_div_brutos_extranjeros, help="Suma de los importes brutos de empresas NO españolas, siempre que hayan tenido retención en origen mayor que 0. Corresponde a la casilla 588 en la declaración de la renta.")
                     
                     st.markdown("<br>", unsafe_allow_html=True) 
                     
@@ -2884,11 +2883,13 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                     texto_consolidado = f"{tot_bruto_consolidado:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
                     col5.metric("Bruto Consolidado", texto_consolidado, help="Total real sumando lo que tienes en PDFs y lo que tiene AEAT.")
                     
+                    # 🎯 AÑADIDA MENCIÓN A LA CASILLA 0029
                     texto_añadir = f"{tot_bruto_añadir_aeat:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
-                    col6.metric("Bruto a añadir a declaración", texto_añadir, help="Dinero que tienes justificado en PDF pero que Hacienda no sabe.")
+                    col6.metric("Bruto a añadir a declaración", texto_añadir, help="Dinero que tienes justificado en PDF pero que Hacienda no sabe. Corresponde a lo que hay que añadir a la casilla 0029.")
                     
+                    # 🎯 AÑADIDA MENCIÓN A LA CASILLA 588
                     texto_recup = f"{tot_ret_recuperable:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
-                    col7.metric("Ret. Origen Recuperable", texto_recup, help="Calculado automáticamente por tu Base de Datos.")
+                    col7.metric("Ret. Origen Recuperable", texto_recup, help="Calculado automáticamente por tu Base de Datos. Corresponde a la casilla 588 en la declaración de la renta.")
 
                     st.markdown("### 🔍 Detalle Dividendo a Dividendo")
                     
