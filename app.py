@@ -2738,7 +2738,7 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                                 "concepto": str(row.get("concepto", "")).strip(),
                                 "pais": str(row.get("pais", "Desconocido")).strip().upper(), 
                                 "bruto": round(float(row.get("bruto_ing") or 0), 2),
-                                "neto": round(float(row.get("neto_ing") or 0), 2), # 🎯 LEEMOS EL NETO DIRECTO DE LA BD
+                                "neto": round(float(row.get("neto_ing") or 0), 2),
                                 "ret": round(float(row.get("ret_destino_ing") or 0), 2),
                                 "ret_ori": round(float(row.get("ret_origen_ing") or 0), 2), 
                                 "ret_recup": round(float(row.get("Recupera_ret_origen") or 0), 2), 
@@ -2763,7 +2763,7 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
 
                     # 2️⃣ ALGORITMO DE EMPAREJAMIENTO
                     for div_mov in mov_list:
-                        neto_mov = div_mov["neto"] # 🎯 SIN CÁLCULOS, USAMOS EL VALOR REAL
+                        neto_mov = div_mov["neto"]
                         
                         if div_mov["comprobado"]: continue
                         
@@ -2846,7 +2846,7 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                     dif_global_bruto = tot_bruto_movs - tot_bruto_aeat
 
                     tot_bruto_consolidado = 0.0
-                    tot_neto_extranjero = 0.0
+                    tot_div_brutos_extranjeros = 0.0 # 🎯 NUEVA VARIABLE
                     
                     paises_excluidos = ["ESPAÑA", "ES", ""]
                     
@@ -2857,9 +2857,11 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                             tot_bruto_consolidado += row["Bruto_Movs"]
                             
                         pais_upper = str(row.get("Pais", "")).strip().upper()
+                        ret_origen_aplicada = float(row.get("Ret_Ori_Movs", 0.0))
                         
-                        if pais_upper not in paises_excluidos:
-                            tot_neto_extranjero += row.get("Neto_Movs", 0.0)
+                        # 🎯 LÓGICA CONDICIONAL: NO España Y Retención > 0
+                        if pais_upper not in paises_excluidos and ret_origen_aplicada > 0:
+                            tot_div_brutos_extranjeros += row.get("Bruto_Movs", 0.0)
 
                     tot_bruto_añadir_aeat = df_cruce[df_cruce["Estado"] == "❌ Falta en AEAT"]["Bruto_Movs"].sum()
                     tot_ret_recuperable = df_cruce["Ret_Recup_Movs"].sum()
@@ -2872,8 +2874,9 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
                     color_delta = "normal" if abs(dif_global_bruto) <= 1 else ("inverse" if dif_global_bruto < 0 else "off")
                     col3.metric("Descuadre Global Bruto", f"{dif_global_bruto:,.2f} €", delta=round(dif_global_bruto, 2), delta_color=color_delta)
                     
-                    texto_neto_extranjero = f"{tot_neto_extranjero:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
-                    col4.metric("Neto Extranjero", texto_neto_extranjero, help="Suma de la columna Neto de todos los países excepto España.")
+                    # 🎯 CAJA ACTUALIZADA
+                    texto_div_brutos_extranjeros = f"{tot_div_brutos_extranjeros:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                    col4.metric("Dividendos brutos extranjeros", texto_div_brutos_extranjeros, help="Suma de los importes brutos de empresas NO españolas, siempre que hayan tenido retención en origen mayor que 0.")
                     
                     st.markdown("<br>", unsafe_allow_html=True) 
                     
