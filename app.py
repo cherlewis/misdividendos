@@ -512,12 +512,6 @@ elif opcion == "📊 Dividendos a Excel":
 
 
 
-
-
-
-
-
-
 # ==========================================
 # 🚀 APLICACIÓN 2: COMPRAS Y VENTAS
 # ==========================================
@@ -525,16 +519,15 @@ elif opcion == "🛒 Compras/Ventas a Excel":
     st.title("🛒 Extractor de Compras y Ventas")
     st.write("Sube tus justificantes de operaciones de bolsa (ING) para obtener el desglose de comisiones.")
     
-    # Usamos una clave de reseteo para la caché si se cambian los archivos
     archivos_pdf_op = st.file_uploader("Sube tus PDFs de Operaciones aquí", type=["pdf"], accept_multiple_files=True, key="ops")
 
     if archivos_pdf_op:
         nombres_archivos = "".join([a.name for a in archivos_pdf_op])
         
-        # 1. LECTURA Y PROCESAMIENTO (Solo se hace una vez)
+        # 1. LECTURA Y PROCESAMIENTO
         if "ops_df" not in st.session_state or st.session_state.get("ops_archivos") != nombres_archivos:
             datos_operaciones = []
-            archivos_fallidos = [] # 🕵️‍♂️ LISTA DE CHIVATOS
+            archivos_fallidos = [] 
             total_archivos = len(archivos_pdf_op)
             barra_progreso = st.progress(0)
             texto_estado = st.empty()
@@ -552,89 +545,99 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                         if not texto: texto = pdf.pages[0].extract_text()
                         
                         if texto:
-                            # 🎯 1. APLASTAMOS EL TEXTO EN UNA LÍNEA (Adiós saltos de línea molestos)
+                            # 🎯 1. APLASTAMOS EL TEXTO EN UNA LÍNEA
                             texto_unido = re.sub(r"\s+", " ", texto)
                             
-                            # 🎯 2. FUNCIÓN DE AUTOCORRECCIÓN DE OCR (Convierte EUF o EU a EUR)
+                            # 🎯 2. AUTOCORRECTOR MÁGICO PARA MONEDAS ROTAS POR EL OCR
                             def fix_currency(val):
                                 if not val: return "0,00 EUR"
                                 val = val.strip().upper()
-                                return re.sub(r"EUF|EU(?!\w)", "EUR", val)
+                                val = re.sub(r"EUF|EU(?!\w)", "EUR", val) # Arregla EUR
+                                val = re.sub(r"USF|US(?!\w)", "USD", val) # Arregla USD
+                                return val
 
-                            # 🎯 3. NUEVOS PATRONES SUPER-ROBUSTOS (Basados en la cabecera 'Importe total')
-                            # Internacionales (7 importes)
-                            patron_int_A = r"(?:Importe total|total)\s+([A-Za-z0-9\.\-\&\' ]+?)\s+(\d[\d\.]*)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Za-z0-9\.\-\(\) ]+?)\s+(Compra|Venta)\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})"
-                            patron_int_B = r"(?:Importe total|total)\s+(\d[\d\.]*)\s+([A-Za-z0-9\.\-\&\' ]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Za-z0-9\.\-\(\) ]+?)\s+(Compra|Venta)\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})"
+                            # 🎯 3. LÓGICA DE EXTRACCIÓN BASADA EN ANCLAJE DEL ISIN
+                            match_isin = re.search(r"([A-Z]{2}[A-Z0-9]{10})", texto_unido)
                             
-                            # Nacionales (6 importes)
-                            patron_nac_A = r"(?:Importe total|total)\s+([A-Za-z0-9\.\-\&\' ]+?)\s+(\d[\d\.]*)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Za-z0-9\.\-\(\) ]+?)\s+(Compra|Venta)\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})"
-                            patron_nac_B = r"(?:Importe total|total)\s+(\d[\d\.]*)\s+([A-Za-z0-9\.\-\&\' ]+?)\s+([A-Z]{2}[A-Z0-9]{10})\s+([A-Za-z0-9\.\-\(\) ]+?)\s+(Compra|Venta)\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})\s+([\d\.,]+\s*[A-Za-z]{2,3})"
-
-                            match_int_A = re.search(patron_int_A, texto_unido, re.IGNORECASE)
-                            match_int_B = re.search(patron_int_B, texto_unido, re.IGNORECASE)
-                            match_nac_A = re.search(patron_nac_A, texto_unido, re.IGNORECASE)
-                            match_nac_B = re.search(patron_nac_B, texto_unido, re.IGNORECASE)
-
-                            match_usado = None
-                            es_nacional = False
-
-                            if match_int_A:
-                                empresa, titulos, isin, mercado, tipo_op, importe_op, precio, comision_ing, gastos_bolsa, impuestos, comision_cambio, importe_total = match_int_A.groups()
-                                match_usado = True
-                            elif match_int_B:
-                                titulos, empresa, isin, mercado, tipo_op, importe_op, precio, comision_ing, gastos_bolsa, impuestos, comision_cambio, importe_total = match_int_B.groups()
-                                match_usado = True
-                            elif match_nac_A:
-                                empresa, titulos, isin, mercado, tipo_op, importe_op, precio, comision_ing, gastos_bolsa, impuestos, importe_total = match_nac_A.groups()
-                                comision_cambio = "0,00 EUR"
-                                es_nacional = True
-                                match_usado = True
-                            elif match_nac_B:
-                                titulos, empresa, isin, mercado, tipo_op, importe_op, precio, comision_ing, gastos_bolsa, impuestos, importe_total = match_nac_B.groups()
-                                comision_cambio = "0,00 EUR"
-                                es_nacional = True
-                                match_usado = True
-
-                            if match_usado:
-                                # Corregimos cualquier fallo de lectura en las monedas
-                                importe_op = fix_currency(importe_op)
-                                precio = fix_currency(precio)
-                                comision_ing = fix_currency(comision_ing)
-                                gastos_bolsa = fix_currency(gastos_bolsa)
-                                impuestos = fix_currency(impuestos)
-                                comision_cambio = fix_currency(comision_cambio)
-                                importe_total = fix_currency(importe_total)
-
-                                # Extraer Fecha (siempre suele ser la segunda que aparece)
-                                fechas = re.findall(r"\d{2}/\d{2}/\d{4}", texto_unido)
-                                fecha_ejecucion = fechas[1] if len(fechas) > 1 else (fechas[0] if fechas else "No encontrada")
+                            if match_isin:
+                                isin = match_isin.group(1).strip()
                                 
-                                # Extraer Tipo de Orden
-                                match_tipo_orden = re.search(r"\b(Limitada|Por lo mejor|A mercado)\b", texto_unido, re.IGNORECASE)
-                                tipo_orden = match_tipo_orden.group(1).capitalize() if match_tipo_orden else "Desconocido"
-
-                                # Extraer Cambio de Divisa (buscando el decimal final)
-                                if not es_nacional:
-                                    match_cambio = re.search(r"(\d+,\d{2,6})\s*EUR\s+[\d\.,]+\s*EUR", texto_unido)
-                                    if match_cambio:
-                                        cambio_divisa = match_cambio.group(1) + " EUR"
-                                    else:
-                                        cambio_divisa = "Revisar"
+                                # A) MIRAMOS HACIA ATRÁS DEL ISIN (Para Empresa y Títulos)
+                                texto_antes = texto_unido[:match_isin.start()].strip()
+                                # Limpiamos cabeceras que se hayan pegado
+                                texto_antes = re.sub(r".*\b(?:Importe total|total|divisa|Título|Valor|operación)\b\s*", "", texto_antes, flags=re.IGNORECASE).strip()
+                                
+                                titulos = "0"
+                                empresa = "Desconocida"
+                                
+                                match_emp_tit = re.search(r"^(.*?)\s+(\d+)$", texto_antes)
+                                if match_emp_tit:
+                                    empresa = match_emp_tit.group(1).strip()
+                                    titulos = match_emp_tit.group(2).strip()
                                 else:
-                                    cambio_divisa = "1,000 EUR"
+                                    match_tit_emp = re.search(r"^(\d+)\s+(.*?)$", texto_antes)
+                                    if match_tit_emp:
+                                        titulos = match_tit_emp.group(1).strip()
+                                        empresa = match_tit_emp.group(2).strip()
+                                    else:
+                                        empresa = texto_antes
+                                        
+                                # B) MIRAMOS HACIA ADELANTE DEL ISIN (Mercado, Operación e Importes)
+                                texto_despues = texto_unido[match_isin.end():].strip()
+                                match_despues = re.search(r"^([A-Za-z0-9\.\-\(\) ]+?)\s+(Compra|Venta)\s+(.*?)(?:Detalle|Cuenta de|1007|Fecha y hora|$)", texto_despues, re.IGNORECASE)
+                                
+                                if match_despues:
+                                    mercado = match_despues.group(1).strip()
+                                    tipo_op = match_despues.group(2).capitalize()
+                                    bloque_importes = match_despues.group(3).strip()
+                                    
+                                    importes = re.findall(r"[\d\.,]+\s*[A-Za-z]{2,3}", bloque_importes)
+                                    
+                                    if len(importes) >= 6:
+                                        importe_op = fix_currency(importes[0])
+                                        precio = fix_currency(importes[1])
+                                        comision_ing = fix_currency(importes[2])
+                                        gastos_bolsa = fix_currency(importes[3])
+                                        impuestos = fix_currency(importes[4])
+                                        
+                                        if len(importes) >= 7:
+                                            comision_cambio = fix_currency(importes[5])
+                                            importe_total = fix_currency(importes[6])
+                                        else:
+                                            comision_cambio = "0,00 EUR"
+                                            importe_total = fix_currency(importes[5])
+                                            
+                                        # FECHAS Y TIPOS
+                                        fechas = re.findall(r"(\d{2}/\d{2}/\d{4})", texto_unido)
+                                        fecha_ejecucion = fechas[1] if len(fechas) > 1 else (fechas[0] if fechas else "No encontrada")
+                                        
+                                        match_tipo_orden = re.search(r"\b(Limitada|Por lo mejor|A mercado)\b", texto_unido, re.IGNORECASE)
+                                        tipo_orden = match_tipo_orden.group(1).capitalize() if match_tipo_orden else "Desconocido"
 
-                                # Identificar derechos
-                                es_derecho = True if (".D " in empresa.upper() or ".D." in empresa.upper() or "DERECHO" in empresa.upper()) else False
+                                        if len(importes) >= 7: # Internacionales
+                                            match_cambio = re.search(r"(\d+,\d{2,6})\s*EUR\s+[\d\.,]+\s*EUR", texto_unido)
+                                            if match_cambio:
+                                                cambio_divisa = match_cambio.group(1) + " EUR"
+                                            else:
+                                                cambio_divisa = "Revisar"
+                                        else:
+                                            cambio_divisa = "1,000 EUR"
 
-                                datos_operaciones.append({
-                                    "Fecha": fecha_ejecucion, "Operación": tipo_op.capitalize(), "Tipo Orden": tipo_orden, 
-                                    "Empresa_PDF": empresa.strip(), "ISIN": isin.strip(), "Títulos": titulos, "Precio": precio,
-                                    "Importe Op.": importe_op, "Comisión ING": comision_ing, "Gastos Bolsa": gastos_bolsa,
-                                    "Impuestos": impuestos, "Comisión Cambio": comision_cambio, "Importe Total": importe_total,
-                                    "Mercado": mercado.strip(), "Divisa / Cambio": cambio_divisa, "Archivo": archivo.name,
-                                    "Es_Derecho": es_derecho,
-                                    "Titulos_Originales_PDF": titulos 
-                                })
+                                        es_derecho = True if (".D " in empresa.upper() or ".D." in empresa.upper() or "DERECHO" in empresa.upper()) else False
+
+                                        datos_operaciones.append({
+                                            "Fecha": fecha_ejecucion, "Operación": tipo_op, "Tipo Orden": tipo_orden, 
+                                            "Empresa_PDF": empresa, "ISIN": isin, "Títulos": titulos, "Precio": precio,
+                                            "Importe Op.": importe_op, "Comisión ING": comision_ing, "Gastos Bolsa": gastos_bolsa,
+                                            "Impuestos": impuestos, "Comisión Cambio": comision_cambio, "Importe Total": importe_total,
+                                            "Mercado": mercado, "Divisa / Cambio": cambio_divisa, "Archivo": archivo.name,
+                                            "Es_Derecho": es_derecho,
+                                            "Titulos_Originales_PDF": titulos 
+                                        })
+                                    else:
+                                        archivos_fallidos.append(archivo.name)
+                                else:
+                                    archivos_fallidos.append(archivo.name)
                             else:
                                 archivos_fallidos.append(archivo.name)
                         else:
@@ -791,6 +794,11 @@ elif opcion == "🛒 Compras/Ventas a Excel":
             
             csv = df_mostrar.drop(columns=["Es_Derecho", "Titulos_Originales_PDF"]).to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv, file_name='operaciones_enriquecidas.csv', mime='text/csv', use_container_width=True)
+
+
+
+
+
 
 
 
