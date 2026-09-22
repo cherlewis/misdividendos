@@ -7,7 +7,77 @@ import zipfile
 import gc  
 from datetime import datetime
 
-st.set_page_config(page_title="Centro Financiero ING", layout="wide")
+# ==========================================
+# 🎨 CONFIGURACIÓN Y ESTILOS MODERNOS
+# ==========================================
+st.set_page_config(page_title="Centro Financiero ING", layout="wide", page_icon="🏦")
+
+# INYECCIÓN DE CSS PARA MODERNIZAR LA INTERFAZ
+st.markdown("""
+<style>
+    /* Fondo general más limpio (gris muy claro) */
+    .stApp {
+        background-color: #f4f6f9;
+    }
+    
+    /* Modernizar el Menú Lateral */
+    [data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 1px solid #e6e9ef;
+    }
+    
+    /* Transformar los Radio Buttons del menú en "Botones tipo Pestaña" */
+    div.row-widget.stRadio > div[role="radiogroup"] {
+        gap: 8px;
+    }
+    div.row-widget.stRadio > div[role="radiogroup"] > label {
+        background: #ffffff;
+        padding: 12px 15px;
+        border-radius: 8px;
+        border: 1px solid #e0e4e8;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        transition: all 0.2s ease;
+        cursor: pointer;
+    }
+    div.row-widget.stRadio > div[role="radiogroup"] > label:hover {
+        border-color: #ff4b4b;
+        background-color: #fffaf9;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    
+    /* Estilizar las Métricas (st.metric) como Tarjetas */
+    [data-testid="stMetric"] {
+        background-color: #ffffff;
+        border: 1px solid #e0e4e8;
+        padding: 15px 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+        border-left: 4px solid #ff4b4b; /* Acento rojo corporativo */
+    }
+    
+    /* Botones primarios redondeados y con sombra */
+    .stButton>button[kind="primary"] {
+        border-radius: 8px;
+        font-weight: 600;
+        box-shadow: 0 4px 6px rgba(255, 75, 75, 0.2);
+        transition: all 0.3s ease;
+    }
+    .stButton>button[kind="primary"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(255, 75, 75, 0.3);
+    }
+    
+    /* Contenedores con borde y fondo blanco */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        border: none;
+        padding: 10px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # ==========================================
 # 🧠 FUNCIONES COMPARTIDAS
@@ -70,54 +140,57 @@ def calcular_retencion_recuperable(pct_str, bruto_str, ret_o_str):
         return formato_numero_tabla(recuperable)
     return "0,00"
 
-
-
 # ==========================================
-# 🧭 MENÚ LATERAL
+# 🧭 MENÚ LATERAL MODERNIZADO
 # ==========================================
-st.sidebar.title("🛠️ Menú Principal")
-st.sidebar.write("Elige la herramienta que quieres usar:")
+# Cabecera HTML personalizada para el sidebar
+st.sidebar.markdown("""
+<div style="text-align: center; margin-bottom: 20px;">
+    <h2 style="color: #1e1e1e; margin-bottom: 0px;">🏦 Centro Financiero</h2>
+    <p style="color: #6c757d; font-size: 14px;">Gestión y Auditoría</p>
+</div>
+""", unsafe_allow_html=True)
 
+# Agrupación visual en el menú lateral (Separadores Markdown)
+st.sidebar.caption("📊 ANÁLISIS Y DATOS")
+opcion_analisis = [
+    "📊 Cuadro de Mando (Dashboard)",
+    "🏢 Gestor de Empresas (DB)",
+    "✍️ Gestor Manual de Movimientos"
+]
 
-opcion = st.sidebar.radio(
-    "", 
-    [
-        "📊 Cuadro de Mando (Dashboard)",
-        "📊 Dividendos a Excel", 
-        "🛒 Compras/Ventas a Excel", 
-        "🗂️ Renombrador de PDFs",
-        "📄 Extractor Informe Fiscal ING (Div. y DRIPs)",
-        "🏛️ Extractor Informe Fiscal (AEAT)",
-        "⚖️ Auditoría Hacienda vs ING",
-        "📉 Calculadora Plusvalías (Hacienda)",
-        "🏢 Gestor de Empresas (DB)",
-        "⚖️ Auditoría Pro (DB)", # <--- La nueva joya
-        "🕵️‍♂️ Auditoría Interna (ING)",  # <--- ¡AQUÍ ESTÁ LA NUEVA!
-        "⚖️ Auditoría Movs vs AEAT", # <--- ¡ESTA ES LA NUEVA!
-        "✍️ Gestor Manual de Movimientos"  # <--- Añade esta línea
+st.sidebar.caption("📥 EXTRACCIÓN (PDF a EXCEL)")
+opcion_extraccion = [
+    "📊 Dividendos a Excel", 
+    "🛒 Compras/Ventas a Excel", 
+    "🗂️ Renombrador de PDFs",
+    "📄 Extractor Informe Fiscal ING (Div. y DRIPs)",
+    "🏛️ Extractor Informe Fiscal (AEAT)"
+]
 
-    ]
-)
+st.sidebar.caption("⚖️ AUDITORÍA Y FISCALIDAD")
+opcion_auditoria = [
+    "📉 Calculadora Plusvalías (Hacienda)",
+    "💸 Asistente de Renta Web",
+    "⚖️ Auditoría Pro (DB)", 
+    "🕵️‍♂️ Auditoría Interna (ING)",  
+    "⚖️ Auditoría Movs vs AEAT", 
+    "⚖️ Auditoría Hacienda vs ING"
+]
 
-
-
-
-
-
-
+# Unimos todas las opciones en un solo radio, pero el diseño CSS lo hará ver genial
+todas_las_opciones = opcion_analisis + opcion_extraccion + opcion_auditoria
+opcion = st.sidebar.radio("Navegación", todas_las_opciones, label_visibility="collapsed")
 
 st.sidebar.markdown("---")
-st.sidebar.info("💡 Sube tus documentos arrastrándolos todos a la vez.")
-
-
-
+st.sidebar.info("💡 **Tip:** Sube tus documentos arrastrándolos todos a la vez en las herramientas de extracción.")
 
 # ==========================================
 # 🚀 APLICACIÓN 0: CUADRO DE MANDO (DASHBOARD)
 # ==========================================
 if opcion == "📊 Cuadro de Mando (Dashboard)":
-    st.title("📊 Cuadro de Mando: Análisis de Cartera")
-    st.write("Visualización interactiva de tu diversificación basada en tu Base de Datos.")
+    st.markdown("## 📊 Cuadro de Mando: Análisis de Cartera")
+    st.markdown("<p style='color: #666;'>Visualización interactiva de tu diversificación basada en tu Base de Datos en tiempo real.</p>", unsafe_allow_html=True)
 
     try:
         from supabase import create_client, Client
@@ -125,63 +198,60 @@ if opcion == "📊 Cuadro de Mando (Dashboard)":
         key: str = st.secrets["SUPABASE_KEY"]
         supabase: Client = create_client(url, key)
         
-        with st.spinner("Cargando datos estratégicos..."):
+        with st.spinner("Sincronizando datos estratégicos..."):
             respuesta = supabase.table("Empresas").select("Sector, Subsector, Pais, NombreING").execute()
             df_dash = pd.DataFrame(respuesta.data)
 
         if not df_dash.empty:
-            # --- MÉTRICAS RÁPIDAS ---
+            # --- MÉTRICAS RÁPIDAS EN CONTENEDOR ---
+            st.markdown("<br>", unsafe_allow_html=True)
             col_m1, col_m2, col_m3 = st.columns(3)
             col_m1.metric("Total Empresas", len(df_dash))
-            col_m2.metric("Sectores", df_dash['Sector'].nunique())
-            col_m3.metric("Países", df_dash['Pais'].nunique())
+            col_m2.metric("Sectores Diversificados", df_dash['Sector'].nunique())
+            col_m3.metric("Países en Cartera", df_dash['Pais'].nunique())
+            st.markdown("<br>", unsafe_allow_html=True)
 
-            st.markdown("---")
-
-            # --- GRÁFICOS INTERACTIVOS (PLOTLY) ---
+            # --- GRÁFICOS INTERACTIVOS (PLOTLY/VEGA) EN CONTENEDORES ---
             col_g1, col_g2 = st.columns(2)
 
             with col_g1:
-                st.subheader("🌎 Diversificación por País")
-                # Gráfico de tarta interactivo de Streamlit
-                df_pais = df_dash['Pais'].value_counts().reset_index()
-                df_pais.columns = ['País', 'Cantidad']
-                st.write("Distribución porcentual:")
-                st.vega_lite_chart(df_pais, {
-                    'mark': {'type': 'arc', 'innerRadius': 50, 'tooltip': True},
-                    'encoding': {
-                        'theta': {'field': 'Cantidad', 'type': 'quantitative'},
-                        'color': {'field': 'País', 'type': 'nominal', 'legend': {"orient": "bottom"}},
-                    },
-                }, use_container_width=True)
+                with st.container(border=True):
+                    st.subheader("🌎 Diversificación por País")
+                    df_pais = df_dash['Pais'].value_counts().reset_index()
+                    df_pais.columns = ['País', 'Cantidad']
+                    st.vega_lite_chart(df_pais, {
+                        'mark': {'type': 'arc', 'innerRadius': 60, 'tooltip': True},
+                        'encoding': {
+                            'theta': {'field': 'Cantidad', 'type': 'quantitative'},
+                            'color': {'field': 'País', 'type': 'nominal', 'legend': {"orient": "bottom", "title": None}},
+                        },
+                    }, use_container_width=True)
 
             with col_g2:
-                st.subheader("🏗️ Diversificación por Sector")
-                df_sect = df_dash['Sector'].value_counts().reset_index()
-                df_sect.columns = ['Sector', 'Cantidad']
-                st.write("Peso por industria:")
-                st.vega_lite_chart(df_sect, {
-                    'mark': {'type': 'arc', 'innerRadius': 50, 'tooltip': True},
-                    'encoding': {
-                        'theta': {'field': 'Cantidad', 'type': 'quantitative'},
-                        'color': {'field': 'Sector', 'type': 'nominal', 'legend': {"orient": "bottom"}},
-                    },
-                }, use_container_width=True)
-
-            st.markdown("---")
+                with st.container(border=True):
+                    st.subheader("🏗️ Diversificación por Sector")
+                    df_sect = df_dash['Sector'].value_counts().reset_index()
+                    df_sect.columns = ['Sector', 'Cantidad']
+                    st.vega_lite_chart(df_sect, {
+                        'mark': {'type': 'arc', 'innerRadius': 60, 'tooltip': True},
+                        'encoding': {
+                            'theta': {'field': 'Cantidad', 'type': 'quantitative'},
+                            'color': {'field': 'Sector', 'type': 'nominal', 'legend': {"orient": "bottom", "title": None}},
+                        },
+                    }, use_container_width=True)
             
-            # --- GRÁFICO DE BARRAS DE SUBSECTORES ---
-            st.subheader("🔍 Análisis Detallado de Subsectores")
-            df_sub = df_dash['Subsector'].value_counts().reset_index()
-            df_sub.columns = ['Subsector', 'Empresas']
-            df_sub = df_sub.sort_values('Empresas', ascending=False).head(15)
-            
-            st.bar_chart(df_sub.set_index('Subsector'))
+            # --- GRÁFICO DE BARRAS EN CONTENEDOR ---
+            with st.container(border=True):
+                st.subheader("🔍 Análisis Detallado de Subsectores (Top 15)")
+                df_sub = df_dash['Subsector'].value_counts().reset_index()
+                df_sub.columns = ['Subsector', 'Empresas']
+                df_sub = df_sub.sort_values('Empresas', ascending=False).head(15)
+                st.bar_chart(df_sub.set_index('Subsector'), color="#ff4b4b")
 
             # --- TABLA DE APOYO ---
             st.markdown("---")
-            with st.expander("📄 Ver listado completo de activos"):
-                st.dataframe(df_dash.sort_values(by='Sector'), use_container_width=True)
+            with st.expander("📄 Ver y buscar en el listado completo de activos"):
+                st.dataframe(df_dash.sort_values(by='Sector'), use_container_width=True, hide_index=True)
 
         else:
             st.info("Aún no tienes empresas en tu base de datos. Ve a la pestaña '🏢 Gestor de Empresas' para añadir las primeras.")
@@ -190,39 +260,24 @@ if opcion == "📊 Cuadro de Mando (Dashboard)":
         st.error(f"⚠️ Error al cargar el Dashboard: {e}")
 
 
-
-
-
-
-
-# ==========================================
-# 🚀 APLICACIÓN 1: DIVIDENDOS
-# ==========================================
 # ==========================================
 # 🚀 APLICACIÓN 1: DIVIDENDOS
 # ==========================================
 elif opcion == "📊 Dividendos a Excel":
-    st.title("📄 Extractor de Dividendos a Excel")
+    st.markdown("## 📄 Extractor de Dividendos a Excel")
     st.write("Sube tus PDFs de dividendos de ING. Optimizado para detectar importes 'totales' y fechas de abono.")
     
-    # 🏎️ CALENTANDO EL MOTOR EN LA SOMBRA (Cold Start Fix)
-    import pdfplumber
-    import pandas as pd
-    import re
-    import gc
-    import time
-    from supabase import create_client, Client
-    
-    archivos_pdf = st.file_uploader("Sube tus PDFs de Dividendos aquí", type=["pdf"], accept_multiple_files=True, key="divs")
+    with st.container(border=True):
+        archivos_pdf = st.file_uploader("Arrastra aquí tus PDFs de Dividendos", type=["pdf"], accept_multiple_files=True, key="divs")
 
     if archivos_pdf:
         # Generamos una firma con los nombres para saber si has subido PDFs nuevos
         nombres_archivos = "".join([a.name for a in archivos_pdf])
         
-        # ⚡ MEMORIA CACHÉ: Solo procesa si son archivos nuevos
         if "divs_df" not in st.session_state or st.session_state.get("divs_archivos") != nombres_archivos:
+            import time
             datos_dividendos = []
-            archivos_fallidos = [] # 🕵️‍♂️ LISTA NEGRA DE ERRORES
+            archivos_fallidos = []
             total_archivos = len(archivos_pdf)
             barra_progreso = st.progress(0)
             texto_estado = st.empty()
@@ -236,7 +291,7 @@ elif opcion == "📊 Dividendos a Excel":
                         if not texto:
                             raise ValueError("El PDF está vacío o protegido.")
                             
-                        # 1. EMPRESA
+                        # Lógica de extracción intacta
                         match_empresa = re.search(r"(?<!Fecha\s)Valor\s*[:\-]?\s*([A-Za-z0-9\.\-\&\' ]+)", texto, re.IGNORECASE)
                         empresa = match_empresa.group(1).strip() if match_empresa else "Empresa"
                         
@@ -247,16 +302,13 @@ elif opcion == "📊 Dividendos a Excel":
                         if empresa != "Empresa":
                             empresa = empresa.split("   ")[0].split("(")[0].strip()
 
-                        # 1.5 CONCEPTO
                         match_concepto = re.search(r"(Primas?\s+de\s+asistencia|Primas?\s+de\s+emisi[oó]n|Stock\s+Dividend)", texto, re.IGNORECASE)
                         concepto = match_concepto.group(1).strip().upper() if match_concepto else "DIVIDENDO"
 
-                        # 2. FECHAS
                         fechas_todas = re.findall(r"(\d{2}/\d{2}/\d{4})", texto)
                         match_fecha_clara = re.search(r"(?<!valor\s)Fecha\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})", texto, re.IGNORECASE)
                         fecha_abono = match_fecha_clara.group(1) if match_fecha_clara else (fechas_todas[-1] if fechas_todas else "00/00/0000")
                         
-                        # 3. IMPORTES
                         def extraer_dinero(etiqueta, txt):
                             patron = etiqueta + r".*?([\d\.,]+\s*[A-Z€$]{1,3})"
                             res = re.search(patron, txt, re.IGNORECASE | re.DOTALL)
@@ -290,9 +342,8 @@ elif opcion == "📊 Dividendos a Excel":
                 except Exception as e:
                     archivos_fallidos.append(archivo.name)
             
-                gc.collect() # Limpiamos memoria
-                time.sleep(0.05) # Pausa para mantener el navegador vivo
-                
+                gc.collect()
+                time.sleep(0.05)
                 barra_progreso.progress((i + 1) / total_archivos)
 
             texto_estado.empty()
@@ -303,6 +354,7 @@ elif opcion == "📊 Dividendos a Excel":
                 # --- CRUCE CON BASE DE DATOS ---
                 with st.spinner("🧠 Cruzando con tu Base de Datos..."):
                     try:
+                        from supabase import create_client, Client
                         url = st.secrets["SUPABASE_URL"]
                         key = st.secrets["SUPABASE_KEY"]
                         supabase = create_client(url, key)
@@ -365,14 +417,11 @@ elif opcion == "📊 Dividendos a Excel":
         if "divs_df" in st.session_state:
             df_mostrar = st.session_state["divs_df"].copy()
             
-            # Ordenamos por fecha temporalmente
             df_mostrar['Fecha_Temporal'] = pd.to_datetime(df_mostrar['Fecha'], format='%d/%m/%Y', errors='coerce')
             df_mostrar = df_mostrar.sort_values(by='Fecha_Temporal', ascending=True).drop(columns=['Fecha_Temporal'])
 
-            # 🎯 1. CREAMOS LAS NUEVAS COLUMNAS (AÑO, MES Y CÁLCULOS)
             df_mostrar['Año'] = df_mostrar['Fecha'].apply(lambda x: str(x).split('/')[2] if type(x)==str and '/' in x else '')
             df_mostrar['Mes'] = df_mostrar['Fecha'].apply(lambda x: str(x).split('/')[1] if type(x)==str and '/' in x else '')
-            
             df_mostrar['% retencion en origen'] = ""
             df_mostrar['% retencion en destino'] = ""
             df_mostrar['Cuenta de valores'] = ""
@@ -383,27 +432,18 @@ elif opcion == "📊 Dividendos a Excel":
                 try:
                     bruto = euro_a_numero(str(row["Importe Bruto"]))
                     titulos = euro_a_numero(str(row["Títulos"]))
-                    if titulos > 0:
-                        return f"{round(bruto / titulos, 6)}"
-                except:
-                    pass
+                    if titulos > 0: return f"{round(bruto / titulos, 6)}"
+                except: pass
                 return ""
                 
             df_mostrar['Importe por título'] = df_mostrar.apply(calc_importe_por_titulo, axis=1)
 
-            # 🎯 2. RENOMBRAMOS PARA ENCAJAR CON TU FORMATO EXACTO
             df_mostrar = df_mostrar.rename(columns={
-                "Fecha": "Fecha Abono",
-                "Importe Neto": "Importe neto",
-                "Ret. Origen": "Retención en origen",
-                "Ret. Destino": "Retención en destino",
-                "Importe Bruto": "Importe bruto",
-                "NombreING": "Valor",
-                "Títulos": "Número de títulos",
-                "Pais": "PAIS"
+                "Fecha": "Fecha Abono", "Importe Neto": "Importe neto", "Ret. Origen": "Retención en origen",
+                "Ret. Destino": "Retención en destino", "Importe Bruto": "Importe bruto", "NombreING": "Valor",
+                "Títulos": "Número de títulos", "Pais": "PAIS"
             })
 
-            # 🎯 3. ORDENAMOS LAS COLUMNAS COMO HAS PEDIDO
             cols_excel = [
                 "Año", "Mes", "Fecha Abono", "Concepto", "Importe neto", 
                 "Retención en origen", "% retencion en origen", "Retención en destino", 
@@ -411,23 +451,19 @@ elif opcion == "📊 Dividendos a Excel":
                 "Cuenta de valores", "Número de títulos", "Importe por título", 
                 "Cuenta Abono", "% € por titulo", "PAIS"
             ]
-            
             df_mostrar = df_mostrar[cols_excel]
 
-            # 🎯 4. FILA DE TOTALES ACTUALIZADA
             fila_totales = {col: "" for col in df_mostrar.columns}
             fila_totales["Fecha Abono"] = "TOTALES"
-            
             for col in ["Importe bruto", "Retención en origen", "Retención en destino", "Importe neto"]:
                 suma = df_mostrar[col].apply(lambda x: euro_a_numero(str(x)) if pd.notnull(x) and x != "" and str(x) != "0,00 EUR" else 0).sum()
                 fila_totales[col] = f"{formato_numero_tabla(suma)} EUR"
             
             df_mostrar = pd.concat([df_mostrar, pd.DataFrame([fila_totales])], ignore_index=True)
             
-            st.dataframe(df_mostrar)
+            st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
             
             col1, col2 = st.columns(2)
-            
             with col1:
                 csv = df_mostrar.to_csv(index=False, sep=";").encode('utf-8-sig')
                 st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv, file_name='dividendos_enriquecidos.csv', mime='text/csv', use_container_width=True)
@@ -436,9 +472,8 @@ elif opcion == "📊 Dividendos a Excel":
                 if st.button("☁️ Añadir datos a base de datos", type="primary", use_container_width=True):
                     with st.spinner("Comprobando duplicados y subiendo datos..."):
                         try:
-                            # ⚠️ Leemos de la caché original para no romper los nombres de base de datos
+                            from supabase import create_client
                             supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-                            
                             res_db = supabase.table("MovimientosDividendos").select("fecha, empresa, bruto_ing").execute()
                             
                             db_existentes = set()
@@ -466,13 +501,9 @@ elif opcion == "📊 Dividendos a Excel":
                                 ret_origen = euro_a_numero(str(row["Ret. Origen"]))
                                 ret_destino = euro_a_numero(str(row["Ret. Destino"]))
                                 neto_ing = euro_a_numero(str(row["Importe Neto"]))
-                                
                                 empresa_limpia = str(row["NombreING"]).strip().upper()
-                                
                                 titulos_num = euro_a_numero(str(row["Títulos"]))
-                                importe_por_titulo = 0.0
-                                if titulos_num > 0:
-                                    importe_por_titulo = round(bruto_ing / titulos_num, 6)
+                                importe_por_titulo = round(bruto_ing / titulos_num, 6) if titulos_num > 0 else 0.0
                                 
                                 firma_actual = f"{fecha_sql}_{empresa_limpia}_{round(bruto_ing, 2)}"
                                 
@@ -480,37 +511,25 @@ elif opcion == "📊 Dividendos a Excel":
                                     duplicados_omitidos += 1
                                 else:
                                     registros_a_subir.append({
-                                        "fecha": fecha_sql,
-                                        "concepto": str(row["Concepto"]),
-                                        "empresa": empresa_limpia,
-                                        "isin": str(row["ISIN"]).strip(),
-                                        "bruto_ing": bruto_ing,
-                                        "ret_origen_ing": ret_origen,
-                                        "ret_destino_ing": ret_destino,
-                                        "neto_ing": neto_ing,
-                                        "ejercicio_fiscal": ejercicio_fiscal,
-                                        "titulos": int(titulos_num),              
-                                        "importe_por_titulo": importe_por_titulo 
+                                        "fecha": fecha_sql, "concepto": str(row["Concepto"]), "empresa": empresa_limpia,
+                                        "isin": str(row["ISIN"]).strip(), "bruto_ing": bruto_ing, "ret_origen_ing": ret_origen,
+                                        "ret_destino_ing": ret_destino, "neto_ing": neto_ing, "ejercicio_fiscal": ejercicio_fiscal,
+                                        "titulos": int(titulos_num), "importe_por_titulo": importe_por_titulo 
                                     })
                                     db_existentes.add(firma_actual) 
 
                             if registros_a_subir:
                                 supabase.table("MovimientosDividendos").insert(registros_a_subir).execute()
                                 if duplicados_omitidos > 0:
-                                    st.success(f"✅ ¡{len(registros_a_subir)} movimientos NUEVOS subidos! (Se han omitido {duplicados_omitidos} archivos que ya estaban en la BD)")
+                                    st.success(f"✅ ¡{len(registros_a_subir)} movimientos subidos! (Se han omitido {duplicados_omitidos} que ya existían)")
                                 else:
                                     st.success(f"✅ ¡{len(registros_a_subir)} movimientos subidos correctamente!")
                                 st.balloons()
                             else:
-                                st.info(f"ℹ️ No se ha subido nada. Los {duplicados_omitidos} dividendos de estos PDFs ya estaban guardados en tu base de datos.")
+                                st.info(f"ℹ️ No se subió nada. Los {duplicados_omitidos} dividendos ya estaban guardados.")
                                 
                         except Exception as e:
                             st.error(f"❌ Error al subir a la Base de Datos: {e}")
-
-
-
-
-
 
 # ==========================================
 # 🚀 APLICACIÓN 2: COMPRAS Y VENTAS
@@ -795,16 +814,6 @@ elif opcion == "🛒 Compras/Ventas a Excel":
             csv = df_mostrar.drop(columns=["Es_Derecho", "Titulos_Originales_PDF"]).to_csv(index=False, sep=";").encode('utf-8-sig')
             st.download_button(label="⬇️ Descargar Excel Enriquecido", data=csv, file_name='operaciones_enriquecidas.csv', mime='text/csv', use_container_width=True)
 
-
-
-
-
-
-
-
-
-            
-            
             # ---------------------------------------------------------------------
             # 3. GENERACIÓN DE TOTALES, EXCEL Y SUBIDA A SUPABASE
             # ---------------------------------------------------------------------
@@ -922,15 +931,6 @@ elif opcion == "🛒 Compras/Ventas a Excel":
                             except Exception as e:
                                 st.error(f"❌ Error al conectar o guardar en la base de datos: {e}")
 
-
-
-
-
-
-
-
-
-
 # ==========================================
 # 🚀 APLICACIÓN 3: RENOMBRADOR INTELIGENTE
 # ==========================================
@@ -1010,15 +1010,6 @@ elif opcion == "🗂️ Renombrador de PDFs":
         texto_estado.empty()
         st.success("¡Todos los archivos procesables han sido empaquetados!")
         st.download_button(label="📦 Descargar ZIP con PDFs renombrados", data=zip_buffer.getvalue(), file_name="Movimientos_Organizados.zip", mime="application/zip")
-
-
-
-
-
-
-
-
-
 
 # ==========================================
 # 🚀 APLICACIÓN 4: EXTRACTOR INFORME FISCAL ING
@@ -1141,7 +1132,7 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                         "fecha_abono": fecha,
                                         "isin": isin_encontrado,
                                         "concepto": "STOCK DIVIDEND",
-                                        "importe_neto": neto_num,
+                                        "importe_neto": bruto_num, # Asumimos neto = bruto en DRIP si no hay retención explícita
                                         "retencion_origen": 0.0,
                                         "porcentaje_retencion_origen": 0.0,
                                         "retencion_destino": 0.0,
@@ -1227,7 +1218,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                         "retencion_destino": round(ret_des_num, 2),
                                         "porcentaje_retencion_destino": pct_des,
                                         "importe_bruto": round(bruto_num, 2),
-                                        "importe_neto": round(neto_num, 2),
                                         "empresa": empresa_full,
                                         "pais": pais_origen,
                                         "cuenta_valores": "",
@@ -1290,7 +1280,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                         "retencion_destino": float(row["retencion_destino"]),
                                         "porcentaje_retencion_destino": float(row["porcentaje_retencion_destino"]),
                                         "importe_bruto": float(row["importe_bruto"]),
-                                        "importe_neto": float(row["importe_neto"]),
                                         "empresa": str(row["empresa"])[:250],
                                         "pais": str(row["pais"])[:100],
                                         "cuenta_valores": str(row["cuenta_valores"]),
@@ -1310,20 +1299,6 @@ elif opcion == "📄 Extractor Informe Fiscal ING (Div. y DRIPs)":
                                 
                         except Exception as e:
                             st.error(f"❌ Error al guardar en DB: {e}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 # ==========================================
 # 🚀 APLICACIÓN 5: AUDITORÍA HACIENDA VS ING
@@ -1365,14 +1340,14 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
             # ---------------------------------------------------------
             # PREPARACIÓN ING (Ahora arrastramos fecha y ret_origen)
             # ---------------------------------------------------------
-            df_ing['Bruto_Num'] = df_ing['Importe Bruto (€)'].apply(euro_a_numero).round(2)
-            df_ing['Ret_Dest_Num'] = df_ing['Retención en destino (€)'].apply(euro_a_numero).round(2)
-            df_ing['Ret_Orig_Num'] = df_ing['Retención en origen (€)'].apply(euro_a_numero).round(2)
+            df_ing['Bruto_Num'] = df_ing['Importe Bruto (€)'].apply(euro_a_numero).round(2) if 'Importe Bruto (€)' in df_ing.columns else df_ing['Importe bruto'].apply(euro_a_numero).round(2)
+            df_ing['Ret_Dest_Num'] = df_ing['Retención en destino (€)'].apply(euro_a_numero).round(2) if 'Retención en destino (€)' in df_ing.columns else df_ing['Retención en destino'].apply(euro_a_numero).round(2)
+            df_ing['Ret_Orig_Num'] = df_ing['Retención en origen (€)'].apply(euro_a_numero).round(2) if 'Retención en origen (€)' in df_ing.columns else df_ing['Retención en origen'].apply(euro_a_numero).round(2)
             
             df_ing = df_ing[df_ing['Bruto_Num'] > 0]
 
             ing_agrup = df_ing.groupby('Bruto_Num').agg({
-                'Empresa': lambda x: ' + '.join(x.unique()),
+                'Empresa': lambda x: ' + '.join(x.unique()) if 'Empresa' in df_ing.columns else ' + '.join(df_ing['Valor'].unique()),
                 'Ret_Dest_Num': 'sum',
                 'Ret_Orig_Num': 'sum',
                 'Fecha Abono': 'first' # Capturamos la primera fecha
@@ -1520,11 +1495,6 @@ elif opcion == "⚖️ Auditoría Hacienda vs ING":
         except Exception as e:
             st.error(f"❌ Error al procesar los archivos. Detalles: {e}")
 
-
-
-
-
-
 # ==========================================
 # 🚀 APLICACIÓN 6: CALCULADORA DE PLUSVALÍAS
 # ==========================================
@@ -1614,11 +1584,6 @@ elif opcion == "📉 Calculadora Plusvalías (Hacienda)":
                 st.markdown("💡 **Tip Fiscal:** Copia directamente el **Valor de Adquisición** y el **Valor de Transmisión** en la casilla de *Transmisión de acciones negociadas* de Renta Web. Las comisiones de ING ya están sumadas en la compra y restadas en la venta.")
             else:
                 st.error(f"❌ Faltan datos. Operaciones detectadas:\n{operaciones}")
-
-
-
-
-
 
 # ==========================================
 # 🚀 APLICACIÓN 7: GESTOR DE EMPRESAS (SUPABASE)
@@ -1864,13 +1829,6 @@ elif opcion == "🏢 Gestor de Empresas (DB)":
                 except Exception as e:
                     st.error(f"❌ Error al intentar borrar: {e}")
 
-
-
-
-
-
-
-
 # ==========================================
 # 🚀 APLICACIÓN 8: ASISTENTE DE RENTA WEB
 # ==========================================
@@ -1958,16 +1916,8 @@ elif opcion == "💸 Asistente de Renta Web":
                 3. **En la Casilla 588:** Busca el apartado de 'Doble Imposición Internacional'. En 'Rentas incluidas en la base del ahorro' pon el bruto extranjero ({formatear_moneda(total_bruto_extranjero)}) y en 'Impuesto pagado en el extranjero' pon **{formato_numero_tabla(total_deduccion_588)} €**.
                 """)
 
-
-
-
-
-
 # ==========================================
 # 🚀 APLICACIÓN 9: AUDITORÍA PRO (DB)
-# ==========================================
-# ==========================================
-# 🚀 APLICACIÓN: AUDITORÍA PRO (DB)
 # ==========================================
 elif opcion == "⚖️ Auditoría Pro (DB)":
     st.title("⚖️ Auditoría Pro (Base de Datos)")
@@ -2225,14 +2175,6 @@ elif opcion == "⚖️ Auditoría Pro (DB)":
 
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
-
-
-
-
-
-
-
-
 
 # ==========================================
 # 🚀 APLICACIÓN 10: EXTRACTOR INFORME FISCAL AEAT
@@ -2544,13 +2486,6 @@ elif opcion == "🏛️ Extractor Informe Fiscal (AEAT)":
             except Exception as e:
                 st.error(f"❌ Error procesando el archivo: {e}")
 
-
-
-
-
-
-
-
 # ==========================================
 # 🚀 APLICACIÓN 11: AUDITORÍA INTERNA (ING vs MOVS)
 # ==========================================
@@ -2755,15 +2690,6 @@ elif opcion == "🕵️‍♂️ Auditoría Interna (ING)":
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
 
-
-
-
-
-
-
-# ==========================================
-# 🚀 APLICACIÓN: AUDITORÍA MOVS vs AEAT
-# ==========================================
 # ==========================================
 # 🚀 APLICACIÓN: AUDITORÍA MOVS vs AEAT
 # ==========================================
@@ -3006,25 +2932,6 @@ elif opcion == "⚖️ Auditoría Movs vs AEAT":
             except Exception as e:
                 st.error(f"❌ Error interno al realizar la auditoría: {e}")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ==========================================
-# 🚀 APLICACIÓN: GESTOR MANUAL DE MOVIMIENTOS
-# ==========================================
 # ==========================================
 # 🚀 APLICACIÓN: GESTOR MANUAL DE MOVIMIENTOS
 # ==========================================
@@ -3201,14 +3108,3 @@ elif opcion == "✍️ Gestor Manual de Movimientos":
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
-
-
-
-
-
-
-
-
-
-
-
